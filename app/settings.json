@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "camera_profiles": {},
+  "active_camera_id": null,
+  "processing": {
+    "target_resolution": [
+      1920,
+      1080
+    ],
+    "min_hole_diameter_mm": 4.5,
+    "max_hole_diameter_mm": 12.0,
+    "use_adaptive_threshold": true,
+    "gaussian_sigma": 1.0,
+    "clahe_clip_limit": 2.0
+  },
+  "calibration": {
+    "grid_step_mm": 10.0,
+    "mask_path": "app/data/mask.png",
+    "template_path": "app/data/template.png"
+  },
+  "export": {
+    "output_dir": "results",
+    "author": "",
+    "organization": "",
+    "default_formats": [
+      "csv",
+      "pdf",
+      "docx"
+    ]
+  },
+  "ui": {
+    "language": "ru",
+    "show_problem_candidates": false,
+    "show_r50": true,
+    "show_r90": false
+  }
+}
