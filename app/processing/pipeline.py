@@ -18,6 +18,7 @@ from app.processing.diff_threshold import DiffThresholdParams, diff_and_threshol
 from app.processing.metrics import compute_metrics
 from app.processing.overlay import render_overlay
 from app.processing.scale import ScaleModel
+from app.utils.image_io import imread, imwrite
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,7 @@ class ProcessingPipeline:
             params=self.config.detection_params,
             origin_px=self.origin_px,
             debug=self.config.collect_debug,
+            template_gray=self.template_gray,
         )
         stats.detect_ms = (time.perf_counter() - detect_start) * 1000
 
@@ -120,8 +122,10 @@ class ProcessingPipeline:
         overlay_name = f"{result.target_id}_overlay.png"
         original_path = self.config.output_dir / base_name
         overlay_path = self.config.output_dir / overlay_name
-        cv2.imwrite(str(original_path), original_bgr)
-        cv2.imwrite(str(overlay_path), overlay)
+        if not imwrite(original_path, original_bgr):
+            logger.warning("Failed to save original frame: %s", original_path)
+        if not imwrite(overlay_path, overlay):
+            logger.warning("Failed to save overlay: %s", overlay_path)
         result.image_path = str(original_path)
         result.overlay_path = str(overlay_path)
 
@@ -154,7 +158,7 @@ class ProcessingPipeline:
     def _load_template(path: Path) -> np.ndarray:
         if not path.exists():
             raise FileNotFoundError(f"Template not found: {path}")
-        template = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+        template = imread(path, cv2.IMREAD_GRAYSCALE)
         if template is None:
             raise ValueError(f"Failed to load template: {path}")
         return template
@@ -166,7 +170,7 @@ class ProcessingPipeline:
         if not path.exists():
             logger.warning("Mask path does not exist: %s", path)
             return None
-        mask = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+        mask = imread(path, cv2.IMREAD_GRAYSCALE)
         if mask is None:
             logger.warning("Failed to load mask: %s", path)
             return None

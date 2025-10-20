@@ -4,7 +4,7 @@ from typing import Dict, Iterable, Optional, Tuple
 
 import numpy as np
 from PyQt6.QtCore import QPointF, Qt, pyqtSignal, QRect, QSize
-from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPainterPath, QPen, QPixmap, QWheelEvent
+from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPainterPath, QPen, QPixmap, QWheelEvent, QResizeEvent
 from PyQt6.QtWidgets import (
     QGraphicsEllipseItem,
     QGraphicsItem,
@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QGraphicsView,
     QRubberBand,
     QScrollBar,
+    QSizePolicy,
 )
 
 from app.models import ShotPoint
@@ -96,6 +97,7 @@ class ShotGraphicsView(QGraphicsView):
         self.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         self.setMouseTracking(True)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._background_item: Optional[QGraphicsPixmapItem] = None
         self._origin_marker: Optional[QGraphicsPathItem] = None
         self._pixmap_size: Optional[Tuple[int, int]] = None
@@ -109,6 +111,7 @@ class ShotGraphicsView(QGraphicsView):
         self._selection_origin = QPointF()
         self._selecting_roi = False
         self._selected_roi: Optional[Tuple[int, int, int, int]] = None
+        self._auto_fit = True
 
     def set_scale(self, mm_per_pixel: float, origin_px: Tuple[float, float]) -> None:
         self._mm_per_pixel = mm_per_pixel
@@ -126,6 +129,8 @@ class ShotGraphicsView(QGraphicsView):
         self.setSceneRect(0, 0, pixmap.width(), pixmap.height())
         self._update_origin_marker()
         self.clear_roi()
+        self._auto_fit = True
+        self._fit_view()
 
     def _update_origin_marker(self) -> None:
         if self._pixmap_size is None:
@@ -161,6 +166,7 @@ class ShotGraphicsView(QGraphicsView):
         self._selected_roi = None
         if self._rubber_band:
             self._rubber_band.hide()
+        self._auto_fit = True
 
     def add_point_item(self, shot: ShotPoint) -> None:
         center_px = self.mm_to_scene(shot.x_mm, shot.y_mm)
@@ -218,6 +224,7 @@ class ShotGraphicsView(QGraphicsView):
         if event.button() == Qt.MouseButton.MiddleButton:
             self._dragging = True
             self._last_mouse_pos = event.position()
+            self._auto_fit = False
             event.accept()
             return
 
@@ -283,6 +290,7 @@ class ShotGraphicsView(QGraphicsView):
     def wheelEvent(self, event: QWheelEvent) -> None:
         angle = event.angleDelta().y()
         factor = 1.25 if angle > 0 else 0.8
+        self._auto_fit = False
         self.scale(factor, factor)
 
     def _pan(self, delta) -> None:
@@ -297,3 +305,13 @@ class ShotGraphicsView(QGraphicsView):
         pos = item.scenePos()
         if self._editing_enabled:
             self.pointMoved.emit(item.shot.id, pos.x(), pos.y())
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        if self._auto_fit:
+            self._fit_view()
+
+    def _fit_view(self) -> None:
+        rect = self.sceneRect()
+        if rect.width() > 0 and rect.height() > 0:
+            self.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)

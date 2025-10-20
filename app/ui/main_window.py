@@ -46,6 +46,7 @@ from app.settings_manager import SettingsManager
 from app.ui.shot_view import ShotGraphicsView
 from app.ui.settings_dialog import SettingsDialog
 from app.ui.calibration_wizard import CalibrationWizard
+from app.utils.image_io import imread, imwrite
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +141,7 @@ class MainWindow(QMainWindow):
         splitter.addWidget(right_panel)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 1)
+        splitter.setSizes([int(self.width() * 0.65), int(self.width() * 0.35)])
 
         container = QWidget()
         container_layout = QHBoxLayout(container)
@@ -272,7 +274,7 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
-        image = cv2.imread(path)
+        image = imread(path)
         if image is None:
             QMessageBox.warning(self, "Ошибка", "Не удалось загрузить изображение.")
             return
@@ -292,11 +294,13 @@ class MainWindow(QMainWindow):
             return
         target_path = Path(self.settings_manager.get("calibration", {}).get("template_path", "app/data/template.png"))
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        image = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        image = imread(path, cv2.IMREAD_GRAYSCALE)
         if image is None:
             QMessageBox.warning(self, "Ошибка", "Не удалось прочитать эталон.")
             return
-        cv2.imwrite(str(target_path), image)
+        if not imwrite(target_path, image):
+            QMessageBox.warning(self, "Ошибка", "Не удалось сохранить эталон.")
+            return
         self._pipeline = self._create_pipeline()
         if self._pipeline:
             self._set_status("Эталон обновлён.")
@@ -500,7 +504,9 @@ class MainWindow(QMainWindow):
         else:
             path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(str(path), self._current_result.overlay_image)
+        if not imwrite(path, self._current_result.overlay_image):
+            QMessageBox.warning(self, "Ошибка", "Не удалось сохранить оверлей.")
+            return
         self._current_result.overlay_path = str(path)
 
     def save_current_frame_as_template(self) -> None:
@@ -511,11 +517,13 @@ class MainWindow(QMainWindow):
         calibration = self.settings_manager.get("calibration", {})
         template_path = Path(calibration.get("template_path", "app/data/template.png"))
         template_path.parent.mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(str(template_path), template)
-        calibration = {**calibration, "template_path": str(template_path)}
-        self.settings_manager.set("calibration", calibration)
-        self._pipeline = self._create_pipeline()
-        self._set_status("Текущий кадр сохранён как эталон.")
+        if imwrite(template_path, template):
+            calibration = {**calibration, "template_path": str(template_path)}
+            self.settings_manager.set("calibration", calibration)
+            self._pipeline = self._create_pipeline()
+            self._set_status("Текущий кадр сохранён как эталон.")
+        else:
+            QMessageBox.warning(self, "Ошибка", "Не удалось сохранить эталон.")
 
     def _open_settings_dialog(self) -> None:
         dialog = SettingsDialog(self.settings_manager, self)

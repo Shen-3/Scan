@@ -28,6 +28,7 @@ def detect_hits(
     params: DetectionParams,
     origin_px: Tuple[float, float] = (0.0, 0.0),
     debug: bool = False,
+    template_gray: Optional[np.ndarray] = None,
 ) -> Tuple[List[ShotPoint], Optional[DetectionDebug]]:
     """Extract bullet hole centers from binary mask."""
     contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -54,12 +55,16 @@ def detect_hits(
         ring_mask = cv2.subtract(dilated, local_mask)
         mean_outside = float(cv2.mean(aligned_gray, mask=ring_mask)[0])
         intensity_drop = mean_outside - mean_inside
+        intensity_contrast = abs(intensity_drop)
+        if template_gray is not None:
+            template_inside = float(cv2.mean(template_gray, mask=local_mask)[0])
+            intensity_contrast = max(intensity_contrast, abs(template_inside - mean_inside))
         center_tuple = (float(center_px[0]), float(center_px[1]))
         if eq_radius_px < min_radius_px or eq_radius_px > max_radius_px or circularity < params.min_circularity:
             if debug:
                 rejected.append(center_tuple)
             continue
-        if intensity_drop < params.min_intensity_drop:
+        if intensity_contrast < params.min_intensity_drop:
             if debug:
                 rejected.append(center_tuple)
             continue

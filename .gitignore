@@ -64,3 +64,6 @@ results/
 app/data/export/
 # Generated templates
 app/data/template.png
+results_script
+results_script_settings
+results_script2

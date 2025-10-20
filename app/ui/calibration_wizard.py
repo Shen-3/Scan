@@ -26,6 +26,7 @@ from PyQt6.QtWidgets import (
 from app.camera import CameraManager, CameraError
 from app.settings_manager import SettingsManager
 from app.processing.scale import mm_per_pixel_from_grid
+from app.utils.image_io import imread, imwrite
 
 
 def _np_to_pixmap(image: np.ndarray) -> QPixmap:
@@ -358,7 +359,7 @@ class CalibrationWizard(QWizard):
         self.mask_rect: Optional[QRect] = None
 
         if self.template_path.exists():
-            existing = cv2.imread(str(self.template_path), cv2.IMREAD_GRAYSCALE)
+            existing = imread(self.template_path, cv2.IMREAD_GRAYSCALE)
             if existing is not None:
                 self.template_gray = existing
 
@@ -372,7 +373,9 @@ class CalibrationWizard(QWizard):
             QMessageBox.warning(self, "Калибровка", "Эталон не сохранён.")
             return
         self.template_path.parent.mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(str(self.template_path), self.template_gray)
+        if not imwrite(self.template_path, self.template_gray):
+            QMessageBox.critical(self, "Калибровка", "Не удалось сохранить эталон.")
+            return
         if self.mask_rect is not None and self.template_gray is not None:
             mask = np.zeros_like(self.template_gray, dtype=np.uint8)
             rect = self.mask_rect
@@ -382,7 +385,9 @@ class CalibrationWizard(QWizard):
             y1 = min(mask.shape[0], rect.bottom() + 1)
             mask[y0:y1, x0:x1] = 255
             self.mask_path.parent.mkdir(parents=True, exist_ok=True)
-            cv2.imwrite(str(self.mask_path), mask)
+            if not imwrite(self.mask_path, mask):
+                QMessageBox.critical(self, "Калибровка", "Не удалось сохранить маску.")
+                return
 
         self._update_settings()
         super().accept()

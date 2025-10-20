@@ -13,13 +13,13 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "target_resolution": [1920, 1080],
         "min_hole_diameter_mm": 4.5,
         "max_hole_diameter_mm": 12.0,
-        "use_adaptive_threshold": True,
+        "use_adaptive_threshold": False,
         "gaussian_sigma": 1.0,
         "clahe_clip_limit": 2.0,
     },
     "calibration": {
         "grid_step_mm": 10.0,
-        "mask_path": "app/data/mask.png",
+        "mask_path": "",
         "template_path": "app/data/template.png",
         "mm_per_pixel": 0.05,
     },
@@ -88,4 +88,3 @@ def _merge_settings(current: Dict[str, Any], defaults: Dict[str, Any]) -> Dict[s
         if key not in merged:
             merged[key] = value
     return merged
-

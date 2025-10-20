@@ -52,7 +52,7 @@ def render_overlay(
         cv2.circle(annotated, center_px, 6, (255, 200, 0), -1)
         cv2.putText(
             annotated,
-            "СТП",
+            "STP",
             (center_px[0] + 8, center_px[1] + 12),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.5,

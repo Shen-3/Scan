@@ -3,11 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict
 
-import cv2
 from docx import Document
 from docx.shared import Inches
 
 from app.models import ProcessingResult
+from app.utils.image_io import imwrite
 
 
 def export_docx(result: ProcessingResult, export_dir: Path, meta: Dict[str, str] | None = None) -> Path:
@@ -76,10 +76,11 @@ def _ensure_overlay_path(result: ProcessingResult, export_dir: Path) -> str | No
     if result.overlay_image is None:
         return None
     fallback = export_dir / f"{result.target_id}_overlay.png"
-    cv2.imwrite(str(fallback), result.overlay_image)
-    result.overlay_path = str(fallback)
+    if imwrite(fallback, result.overlay_image):
+        result.overlay_path = str(fallback)
+    else:
+        raise RuntimeError(f"Не удалось сохранить изображение оверлея для DOCX: {fallback}")
     return result.overlay_path
 
 
 __all__ = ["export_docx"]
-

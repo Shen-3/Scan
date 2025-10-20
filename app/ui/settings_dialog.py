@@ -85,6 +85,7 @@ class SettingsDialog(QDialog):
         self.clahe_clip_spin = QDoubleSpinBox()
         self.clahe_clip_spin.setRange(0.5, 10.0)
         self.clahe_clip_spin.setDecimals(1)
+        self.use_adaptive_checkbox = QCheckBox("Адаптивный порог")
         self.mm_per_pixel_spin = QDoubleSpinBox()
         self.mm_per_pixel_spin.setRange(0.001, 2.0)
         self.mm_per_pixel_spin.setDecimals(4)
@@ -92,6 +93,7 @@ class SettingsDialog(QDialog):
         layout.addRow("Макс. диаметр (мм)", self.max_diameter_spin)
         layout.addRow("Sigma blur", self.gaussian_sigma_spin)
         layout.addRow("CLAHE clip", self.clahe_clip_spin)
+        layout.addRow(self.use_adaptive_checkbox)
         layout.addRow("Мм/пикс", self.mm_per_pixel_spin)
         return group
 
@@ -140,6 +142,7 @@ class SettingsDialog(QDialog):
         self.max_diameter_spin.setValue(float(processing.get("max_hole_diameter_mm", 12.0)))
         self.gaussian_sigma_spin.setValue(float(processing.get("gaussian_sigma", 1.0)))
         self.clahe_clip_spin.setValue(float(processing.get("clahe_clip_limit", 2.0)))
+        self.use_adaptive_checkbox.setChecked(bool(processing.get("use_adaptive_threshold", True)))
         calibration = self.settings_manager.get("calibration", {})
         self.mm_per_pixel_spin.setValue(float(calibration.get("mm_per_pixel", 0.05)))
         export = self.settings_manager.get("export", {})
@@ -158,6 +161,7 @@ class SettingsDialog(QDialog):
         processing["max_hole_diameter_mm"] = self.max_diameter_spin.value()
         processing["gaussian_sigma"] = self.gaussian_sigma_spin.value()
         processing["clahe_clip_limit"] = self.clahe_clip_spin.value()
+        processing["use_adaptive_threshold"] = self.use_adaptive_checkbox.isChecked()
         self.settings_manager.set("processing", processing)
         self.settings_manager.set("active_camera_id", self.camera_id_spin.value())
 

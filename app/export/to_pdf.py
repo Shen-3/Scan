@@ -2,14 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Dict
-
-import cv2
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
 from app.models import ProcessingResult
+from app.utils.image_io import imwrite
 
 
 def export_pdf(result: ProcessingResult, export_dir: Path, meta: Dict[str, str] | None = None) -> Path:
@@ -74,8 +73,10 @@ def _ensure_overlay_path(result: ProcessingResult, export_dir: Path) -> str | No
     if result.overlay_image is None:
         return None
     fallback = export_dir / f"{result.target_id}_overlay.png"
-    cv2.imwrite(str(fallback), result.overlay_image)
-    result.overlay_path = str(fallback)
+    if imwrite(fallback, result.overlay_image):
+        result.overlay_path = str(fallback)
+    else:
+        raise RuntimeError(f"Не удалось сохранить изображение оверлея для PDF: {fallback}")
     return result.overlay_path
 
 
