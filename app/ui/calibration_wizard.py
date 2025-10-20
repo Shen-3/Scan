@@ -373,7 +373,7 @@ class CalibrationWizard(QWizard):
             return
         self.template_path.parent.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(self.template_path), self.template_gray)
-        if self.mask_rect and self.template_gray is not None:
+        if self.mask_rect is not None and self.template_gray is not None:
             mask = np.zeros_like(self.template_gray, dtype=np.uint8)
             rect = self.mask_rect
             x0 = max(0, rect.left())

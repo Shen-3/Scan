@@ -48,19 +48,20 @@ def detect_hits(
         center_px, radius_px = cv2.minEnclosingCircle(contour)
         eq_radius_px = math.sqrt(area_px / math.pi)
         local_mask = np.zeros(binary_mask.shape, dtype=np.uint8)
-        cv2.drawContours(local_mask, [contour], -1, 255, -1)
+        cv2.drawContours(local_mask, [contour], -1, (255, 255, 255), -1)
         mean_inside = float(cv2.mean(aligned_gray, mask=local_mask)[0])
         dilated = cv2.dilate(local_mask, np.ones((5, 5), np.uint8))
         ring_mask = cv2.subtract(dilated, local_mask)
         mean_outside = float(cv2.mean(aligned_gray, mask=ring_mask)[0])
         intensity_drop = mean_outside - mean_inside
+        center_tuple = (float(center_px[0]), float(center_px[1]))
         if eq_radius_px < min_radius_px or eq_radius_px > max_radius_px or circularity < params.min_circularity:
             if debug:
-                rejected.append(center_px)
+                rejected.append(center_tuple)
             continue
         if intensity_drop < params.min_intensity_drop:
             if debug:
-                rejected.append(center_px)
+                rejected.append(center_tuple)
             continue
 
         needs_split = params.split_large_components and radius_px > max_radius_px * 1.2
@@ -83,15 +84,17 @@ def detect_hits(
                 continue
 
         cx, cy = _contour_centroid(contour)
-        if cx is None:
+        if cx is None or cy is None:
             if debug:
-                rejected.append(center_px)
+                rejected.append(center_tuple)
             continue
+        cx_val = float(cx)
+        cy_val = float(cy)
         points.append(
             ShotPoint(
                 id=next_id,
-                x_mm=(cx - origin_px[0]) * mm_per_pixel,
-                y_mm=(cy - origin_px[1]) * mm_per_pixel,
+                x_mm=(cx_val - origin_px[0]) * mm_per_pixel,
+                y_mm=(cy_val - origin_px[1]) * mm_per_pixel,
                 radius_mm=eq_radius_px * mm_per_pixel,
                 confidence=1.0,
             )
@@ -118,8 +121,8 @@ def _split_component(component_mask: np.ndarray, min_distance_px: float) -> List
     y_min, y_max = ys.min(), ys.max()
     x_min, x_max = xs.min(), xs.max()
     roi = component_mask[y_min : y_max + 1, x_min : x_max + 1]
-    distance = ndi.distance_transform_edt(roi)
-    if distance.max() < min_distance_px * 0.5:
+    distance = np.asarray(ndi.distance_transform_edt(roi), dtype=np.float32)
+    if float(distance.max()) < min_distance_px * 0.5:
         return []
 
     ksize = max(3, int(min_distance_px) * 2 + 1)
@@ -127,9 +130,9 @@ def _split_component(component_mask: np.ndarray, min_distance_px: float) -> List
     if ksize % 2 == 0:
         ksize += 1
     kernel = np.ones((ksize, ksize), np.uint8)
-    distance32 = distance.astype(np.float32)
-    dilated = cv2.dilate(distance32, kernel)
-    peak_mask = (distance == dilated) & (distance > 0.5 * distance.max())
+    dilated = cv2.dilate(distance, kernel)
+    max_distance = float(distance.max())
+    peak_mask = (distance == dilated) & (distance > 0.5 * max_distance)
     peak_mask = peak_mask.astype(np.uint8)
     num_labels, markers = cv2.connectedComponents(peak_mask)
     if num_labels <= 1:
@@ -149,7 +152,7 @@ def _split_component(component_mask: np.ndarray, min_distance_px: float) -> List
         if mask.sum() == 0:
             continue
         cy, cx = ndi.center_of_mass(mask)
-        centers.append((x_min + cx, y_min + cy))
+        centers.append((float(x_min + cx), float(y_min + cy)))
     return centers
 
 
@@ -186,13 +189,13 @@ def split_roi_components(
             # Component already within expected size; no splitting needed.
             continue
         local_mask = np.zeros_like(roi_mask, dtype=np.uint8)
-        cv2.drawContours(local_mask, [contour], -1, 255, -1)
+        cv2.drawContours(local_mask, [contour], -1, (255, 255, 255), -1)
         centers = _split_component(local_mask, min_distance_px)
         if len(centers) <= 1:
             continue
         for cx, cy in centers:
-            global_x = x + cx
-            global_y = y + cy
+            global_x = float(x + cx)
+            global_y = float(y + cy)
             new_points.append(
                 ShotPoint(
                     id=0,
