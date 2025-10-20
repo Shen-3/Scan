@@ -155,7 +155,9 @@ def test_processing_pipeline_end_to_end(tmp_path: Path):
     result = pipeline.process(frame, target_id="sample")
     assert result.metrics is not None
     assert result.points
+    assert result.image_path is not None
     assert Path(result.image_path).exists()
+    assert result.overlay_path is not None
     assert Path(result.overlay_path).exists()
     assert result.stats.align_ms >= 0.0
     assert result.mm_per_pixel == pytest.approx(scale_model.mm_per_pixel) 

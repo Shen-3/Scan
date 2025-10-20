@@ -30,15 +30,16 @@ from app.processing.scale import mm_per_pixel_from_grid
 
 def _np_to_pixmap(image: np.ndarray) -> QPixmap:
     if image.ndim == 2:
-        height, width = image.shape
-        qimage = QImage(image.data, width, height, width, QImage.Format.Format_Grayscale8)
+        gray = np.ascontiguousarray(image)
+        height, width = gray.shape
+        qimage = QImage(gray.data, width, height, width, QImage.Format.Format_Grayscale8)
     else:
         bgr = image
         if image.shape[2] == 3:
-            rgb = bgr[..., ::-1]
+            rgb = np.ascontiguousarray(bgr[..., ::-1])
             qimage = QImage(rgb.data, rgb.shape[1], rgb.shape[0], rgb.strides[0], QImage.Format.Format_RGB888)
         elif image.shape[2] == 4:
-            rgba = image[..., [2, 1, 0, 3]]
+            rgba = np.ascontiguousarray(image[..., [2, 1, 0, 3]])
             qimage = QImage(rgba.data, rgba.shape[1], rgba.shape[0], rgba.strides[0], QImage.Format.Format_RGBA8888)
         else:
             raise ValueError("Unsupported image shape")
@@ -135,7 +136,7 @@ class CalibrationImageWidget(QLabel):
             for x, y in self._current_pair:
                 cv2.drawMarker(base, (x, y), (0, 255, 0), markerType=cv2.MARKER_CROSS, markerSize=16, thickness=2)
         elif self._mode == "mask":
-            if self._mask_rect:
+            if self._mask_rect is not None:
                 rect = self._mask_rect
                 cv2.rectangle(
                     base,

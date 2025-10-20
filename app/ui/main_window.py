@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QFileDialog,
+    QStatusBar,
 )
 
 from app.camera import CameraManager, CameraError
@@ -58,10 +59,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("СТП анализатор")
         self.resize(1400, 800)
 
-        self.shot_view = ShotGraphicsView()
-        self.metrics_table = self._create_metrics_table()
-        self.points_list = QListWidget()
-        self.status_label = QLabel("Готово")
+        self.shot_view: ShotGraphicsView = ShotGraphicsView()
+        self.metrics_table: QTableWidget = self._create_metrics_table()
+        self.points_list: QListWidget = QListWidget()
+        self.status_label: QLabel = QLabel("Готово")
         self.camera_button = QPushButton("Снять кадр")
         self.load_image_button = QPushButton("Загрузить файл")
         self.process_button = QPushButton("Обработать")
@@ -144,7 +145,12 @@ class MainWindow(QMainWindow):
         container_layout = QHBoxLayout(container)
         container_layout.addWidget(splitter)
         self.setCentralWidget(container)
-        self.statusBar().showMessage("Готово")
+        status_bar = self.statusBar()
+        if status_bar is None:
+            status_bar = QStatusBar(self)
+            self.setStatusBar(status_bar)
+        self._status_bar: QStatusBar = status_bar
+        self._status_bar.showMessage("Готово")
 
     @staticmethod
     def _create_metrics_table() -> QTableWidget:
@@ -162,7 +168,9 @@ class MainWindow(QMainWindow):
         ]
         table = QTableWidget(len(metrics), 2)
         table.setHorizontalHeaderLabels(["Параметр", "Значение"])
-        table.verticalHeader().setVisible(False)
+        vertical_header = table.verticalHeader()
+        if vertical_header is not None:
+            vertical_header.setVisible(False)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         for row, (label, _) in enumerate(metrics):
@@ -236,7 +244,8 @@ class MainWindow(QMainWindow):
 
     def _set_status(self, message: str) -> None:
         self.status_label.setText(message)
-        self.statusBar().showMessage(message, 5000)
+        if self._status_bar is not None:
+            self._status_bar.showMessage(message, 5000)
 
     def capture_frame(self) -> None:
         camera_id = self.settings_manager.get("active_camera_id", 0)
@@ -314,7 +323,14 @@ class MainWindow(QMainWindow):
         self._current_result = result
         self._next_point_id = max((point.id for point in result.points), default=0) + 1
         self._clear_history()
-        background = result.overlay_image or cv2.cvtColor(result.aligned_gray, cv2.COLOR_GRAY2BGR)
+        if result.overlay_image is not None:
+            background = result.overlay_image
+        elif result.aligned_gray is not None:
+            background = cv2.cvtColor(result.aligned_gray, cv2.COLOR_GRAY2BGR)
+        elif self._current_frame is not None:
+            background = self._current_frame
+        else:
+            background = np.zeros((1, 1, 3), dtype=np.uint8)
         self.shot_view.set_background(background)
         self.shot_view.set_scale(result.mm_per_pixel or self._scale_model.mm_per_pixel, result.origin_px or (0.0, 0.0))
         self.shot_view.load_points(result.points)
@@ -336,6 +352,8 @@ class MainWindow(QMainWindow):
         summary = self._current_result.to_summary_dict() if self._current_result else {}
         for row, key in enumerate(keys):
             item = self.metrics_table.item(row, 1)
+            if item is None:
+                continue
             if values and key in summary:
                 item.setText(f"{summary[key]:.2f}")
             else:
@@ -429,7 +447,9 @@ class MainWindow(QMainWindow):
         self._current_frame = None
         self._current_result = None
         self._next_point_id = 1
-        self.shot_view.scene().clear()
+        scene = self.shot_view.scene()
+        if scene is not None:
+            scene.clear()
         self.shot_view.clear_view()
         self._reset_metrics_table()
         self.points_list.clear()

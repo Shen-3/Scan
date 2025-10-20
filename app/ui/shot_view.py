@@ -4,7 +4,7 @@ from typing import Dict, Iterable, Optional, Tuple
 
 import numpy as np
 from PyQt6.QtCore import QPointF, Qt, pyqtSignal, QRect, QSize
-from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPainterPath, QPen, QPixmap
+from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPainterPath, QPen, QPixmap, QWheelEvent
 from PyQt6.QtWidgets import (
     QGraphicsEllipseItem,
     QGraphicsItem,
@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QGraphicsSimpleTextItem,
     QGraphicsView,
     QRubberBand,
+    QScrollBar,
 )
 
 from app.models import ShotPoint
@@ -21,13 +22,14 @@ from app.models import ShotPoint
 
 def _np_to_qpixmap(image: np.ndarray) -> QPixmap:
     if image.ndim == 2:
-        height, width = image.shape
-        qimage = QImage(image.data, width, height, width, QImage.Format.Format_Grayscale8)
+        gray = np.ascontiguousarray(image)
+        height, width = gray.shape
+        qimage = QImage(gray.data, width, height, width, QImage.Format.Format_Grayscale8)
     else:
         if image.shape[2] == 3:
-            rgb = image[..., ::-1]
+            rgb = np.ascontiguousarray(image[..., ::-1])
         elif image.shape[2] == 4:
-            rgb = image[..., [2, 1, 0, 3]]
+            rgb = np.ascontiguousarray(image[..., [2, 1, 0, 3]])
         else:
             raise ValueError("Unsupported channel number")
         height, width = rgb.shape[:2]
@@ -89,9 +91,10 @@ class ShotGraphicsView(QGraphicsView):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setScene(QGraphicsScene(self))
-        self.setRenderHint(QGraphicsView.RenderHint.Antialiasing, True)
-        self.setRenderHint(QGraphicsView.RenderHint.SmoothPixmapTransform, True)
+        self._scene: QGraphicsScene = QGraphicsScene(self)
+        self.setScene(self._scene)
+        self.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         self.setMouseTracking(True)
         self._background_item: Optional[QGraphicsPixmapItem] = None
         self._origin_marker: Optional[QGraphicsPathItem] = None
@@ -116,7 +119,7 @@ class ShotGraphicsView(QGraphicsView):
         pixmap = _np_to_qpixmap(image)
         if self._background_item is None:
             self._background_item = QGraphicsPixmapItem(pixmap)
-            self.scene().addItem(self._background_item)
+            self._scene.addItem(self._background_item)
         else:
             self._background_item.setPixmap(pixmap)
         self._pixmap_size = (pixmap.width(), pixmap.height())
@@ -136,20 +139,20 @@ class ShotGraphicsView(QGraphicsView):
             self._origin_marker = QGraphicsPathItem(path)
             pen = QPen(QColor(0, 255, 0), 2)
             self._origin_marker.setPen(pen)
-            self.scene().addItem(self._origin_marker)
+            self._scene.addItem(self._origin_marker)
         else:
             self._origin_marker.setPath(path)
 
     def load_points(self, points: Iterable[ShotPoint]) -> None:
         for item in list(self._shot_items.values()):
-            self.scene().removeItem(item)
+            self._scene.removeItem(item)
         self._shot_items.clear()
         for shot in points:
             self.add_point_item(shot)
         self.set_editing_enabled(bool(self._shot_items))
 
     def clear_view(self) -> None:
-        self.scene().clear()
+        self._scene.clear()
         self._shot_items.clear()
         self._background_item = None
         self._origin_marker = None
@@ -163,7 +166,7 @@ class ShotGraphicsView(QGraphicsView):
         center_px = self.mm_to_scene(shot.x_mm, shot.y_mm)
         radius_px = shot.radius_mm / self._mm_per_pixel if self._mm_per_pixel else 6.0
         item = ShotPointItem(shot, center_px, radius_px, self._handle_item_moved)
-        self.scene().addItem(item)
+        self._scene.addItem(item)
         self._shot_items[shot.id] = item
         self._editing_enabled = True
         self.set_editing_enabled(True)
@@ -171,7 +174,7 @@ class ShotGraphicsView(QGraphicsView):
     def remove_point_item(self, shot_id: int) -> None:
         item = self._shot_items.pop(shot_id, None)
         if item:
-            self.scene().removeItem(item)
+            self._scene.removeItem(item)
         if not self._shot_items:
             self._editing_enabled = False
             self.set_editing_enabled(False)
@@ -219,7 +222,7 @@ class ShotGraphicsView(QGraphicsView):
             return
 
         scene_pos = self.mapToScene(event.position().toPoint())
-        item = self.scene().itemAt(scene_pos, self.transform())
+        item = self._scene.itemAt(scene_pos, self.transform())
         if event.button() == Qt.MouseButton.LeftButton:
             if isinstance(item, ShotPointItem) and self._editing_enabled:
                 super().mousePressEvent(event)
@@ -277,14 +280,18 @@ class ShotGraphicsView(QGraphicsView):
             return
         super().mouseReleaseEvent(event)
 
-    def wheelEvent(self, event) -> None:
+    def wheelEvent(self, event: QWheelEvent) -> None:
         angle = event.angleDelta().y()
         factor = 1.25 if angle > 0 else 0.8
         self.scale(factor, factor)
 
     def _pan(self, delta) -> None:
-        self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
-        self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
+        h_scroll: Optional[QScrollBar] = self.horizontalScrollBar()
+        if h_scroll is not None:
+            h_scroll.setValue(h_scroll.value() - delta.x())
+        v_scroll: Optional[QScrollBar] = self.verticalScrollBar()
+        if v_scroll is not None:
+            v_scroll.setValue(v_scroll.value() - delta.y())
 
     def _handle_item_moved(self, item: ShotPointItem) -> None:
         pos = item.scenePos()

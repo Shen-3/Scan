@@ -1,7 +1,7 @@
 {
   "version": 1,
   "camera_profiles": {},
-  "active_camera_id": null,
+  "active_camera_id": 1,
   "processing": {
     "target_resolution": [
       1920,
@@ -16,7 +16,8 @@
   "calibration": {
     "grid_step_mm": 10.0,
     "mask_path": "app/data/mask.png",
-    "template_path": "app/data/template.png"
+    "template_path": "app/data/template.png",
+    "mm_per_pixel": 0.0388
   },
   "export": {
     "output_dir": "results",
