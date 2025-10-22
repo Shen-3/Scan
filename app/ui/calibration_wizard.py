@@ -5,7 +5,7 @@ import cv2
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from PyQt6.QtCore import QPoint, QRect, Qt, pyqtSignal
+from PyQt6.QtCore import QPoint, QRect, Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QImage, QMouseEvent, QPixmap
 from PyQt6.QtWidgets import (
     QComboBox,
@@ -51,6 +51,7 @@ class CalibrationImageWidget(QLabel):
     """Interactive label supporting measurement clicks or rectangular selection."""
 
     changed = pyqtSignal()
+    MAX_DISPLAY_SIZE = QSize(1100, 700)
 
     def __init__(self, mode: str = "measure", parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -60,10 +61,11 @@ class CalibrationImageWidget(QLabel):
         self._current_pair: List[Tuple[int, int]] = []
         self._measurements: List[float] = []
         self._overlay = None
-        self._mask_rect: Optional[QRect] = None
-        self._rubber_origin = QPoint()
+        self._mask_rect_orig: Optional[QRect] = None
+        self._rubber_origin_display = QPoint()
         self._selecting = False
         self.setMouseTracking(True)
+        self._display_scale: float = 1.0
 
     def set_mode(self, mode: str) -> None:
         self._mode = mode
@@ -71,16 +73,14 @@ class CalibrationImageWidget(QLabel):
 
     def set_image(self, image: np.ndarray) -> None:
         self._image = image.copy()
-        pixmap = _np_to_pixmap(image)
-        self.setPixmap(pixmap)
-        self.setFixedSize(pixmap.size())
         self.reset()
 
     def reset(self) -> None:
         self._current_pair.clear()
         self._measurements.clear()
-        self._mask_rect = None
+        self._mask_rect_orig = None
         if self._image is not None:
+            self._display_scale = self._compute_display_scale(self._image.shape[1], self._image.shape[0])
             self._update_overlay()
         self.changed.emit()
 
@@ -88,7 +88,7 @@ class CalibrationImageWidget(QLabel):
         return list(self._measurements)
 
     def mask_rect(self) -> Optional[QRect]:
-        return self._mask_rect
+        return self._mask_rect_orig
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if self._image is None:
@@ -98,16 +98,16 @@ class CalibrationImageWidget(QLabel):
         elif self._mode == "mask":
             if event.button() == Qt.MouseButton.LeftButton:
                 self._selecting = True
-                self._rubber_origin = event.position().toPoint()
+                self._rubber_origin_display = event.position().toPoint()
             elif event.button() == Qt.MouseButton.RightButton:
-                self._mask_rect = None
+                self._mask_rect_orig = None
                 self._update_overlay()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self._mode == "mask" and self._selecting and self._image is not None:
             current = event.position().toPoint()
-            rect = QRect(self._rubber_origin, current).normalized()
-            self._mask_rect = rect
+            rect = QRect(self._rubber_origin_display, current).normalized()
+            self._mask_rect_orig = self._display_rect_to_original(rect)
             self._update_overlay()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
@@ -117,8 +117,10 @@ class CalibrationImageWidget(QLabel):
     def _handle_measure_click(self, event: QMouseEvent) -> None:
         if event.button() != Qt.MouseButton.LeftButton:
             return
-        x = int(event.position().x())
-        y = int(event.position().y())
+        x_disp = event.position().x()
+        y_disp = event.position().y()
+        x = int(round(x_disp / self._display_scale))
+        y = int(round(y_disp / self._display_scale))
         self._current_pair.append((x, y))
         if len(self._current_pair) == 2:
             (x1, y1), (x2, y2) = self._current_pair
@@ -137,8 +139,8 @@ class CalibrationImageWidget(QLabel):
             for x, y in self._current_pair:
                 cv2.drawMarker(base, (x, y), (0, 255, 0), markerType=cv2.MARKER_CROSS, markerSize=16, thickness=2)
         elif self._mode == "mask":
-            if self._mask_rect is not None:
-                rect = self._mask_rect
+            rect = self._mask_rect_orig
+            if rect is not None:
                 cv2.rectangle(
                     base,
                     (rect.left(), rect.top()),
@@ -147,7 +149,36 @@ class CalibrationImageWidget(QLabel):
                     2,
                 )
         pixmap = _np_to_pixmap(base)
+        if self._display_scale != 1.0:
+            width = max(1, int(pixmap.width() * self._display_scale))
+            height = max(1, int(pixmap.height() * self._display_scale))
+            pixmap = pixmap.scaled(width, height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         self.setPixmap(pixmap)
+        self.setFixedSize(pixmap.size())
+
+    def _compute_display_scale(self, width: int, height: int) -> float:
+        max_w = self.MAX_DISPLAY_SIZE.width()
+        max_h = self.MAX_DISPLAY_SIZE.height()
+        scale_w = max_w / width if width > 0 else 1.0
+        scale_h = max_h / height if height > 0 else 1.0
+        scale = min(1.0, scale_w, scale_h)
+        return scale if scale > 0 else 1.0
+
+    def _display_rect_to_original(self, rect: QRect) -> QRect:
+        if self._display_scale == 0:
+            return rect
+        if self._image is None or self._display_scale == 0:
+            return rect
+        left = int(round(rect.left() / self._display_scale))
+        top = int(round(rect.top() / self._display_scale))
+        right = int(round(rect.right() / self._display_scale))
+        bottom = int(round(rect.bottom() / self._display_scale))
+        h, w = self._image.shape[:2]
+        left = max(0, min(left, w - 1))
+        right = max(0, min(right, w - 1))
+        top = max(0, min(top, h - 1))
+        bottom = max(0, min(bottom, h - 1))
+        return QRect(QPoint(left, top), QPoint(right, bottom))
 
 
 class CameraSelectionPage(QWizardPage):
@@ -352,8 +383,13 @@ class CalibrationWizard(QWizard):
         calibration = settings_manager.get("calibration", {})
         self.grid_step_mm: float = float(calibration.get("grid_step_mm", 10.0))
         self.mm_per_pixel: float = float(calibration.get("mm_per_pixel", 0.05))
-        self.template_path = Path(calibration.get("template_path", "app/data/template.png"))
-        self.mask_path = Path(calibration.get("mask_path", "app/data/mask.png"))
+        template_default = calibration.get("template_path", "app/data/template.png")
+        self.template_path = Path(template_default)
+        mask_value = calibration.get("mask_path")
+        if mask_value:
+            self.mask_path = Path(mask_value)
+        else:
+            self.mask_path = self.template_path.with_name("mask.png")
         self.template_gray: Optional[np.ndarray] = None
         self.captured_frame: Optional[np.ndarray] = None
         self.mask_rect: Optional[QRect] = None
@@ -388,11 +424,14 @@ class CalibrationWizard(QWizard):
             if not imwrite(self.mask_path, mask):
                 QMessageBox.critical(self, "Калибровка", "Не удалось сохранить маску.")
                 return
+            mask_value = str(self.mask_path)
+        else:
+            mask_value = ""
 
-        self._update_settings()
+        self._update_settings(mask_value)
         super().accept()
 
-    def _update_settings(self) -> None:
+    def _update_settings(self, mask_path_value: str = "") -> None:
         processing = dict(self.settings_manager.get("processing", {}))
         processing["target_resolution"] = [self.target_resolution[0], self.target_resolution[1]]
         self.settings_manager.set("processing", processing)
@@ -403,7 +442,7 @@ class CalibrationWizard(QWizard):
         calibration["grid_step_mm"] = self.grid_step_mm
         calibration["mm_per_pixel"] = self.mm_per_pixel
         calibration["template_path"] = str(self.template_path)
-        calibration["mask_path"] = str(self.mask_path)
+        calibration["mask_path"] = mask_path_value
         self.settings_manager.set("calibration", calibration)
 
 

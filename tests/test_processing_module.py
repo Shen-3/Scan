@@ -13,6 +13,7 @@ from app.processing.metrics import compute_metrics
 from app.processing.overlay import render_overlay
 from app.processing.pipeline import PipelineConfig, ProcessingPipeline
 from app.processing.scale import ScaleModel
+from app.processing.errors import AlignmentError
 
 
 def _make_feature_rich_template(size: int = 200) -> np.ndarray:
@@ -23,6 +24,16 @@ def _make_feature_rich_template(size: int = 200) -> np.ndarray:
     cv2.rectangle(template, (40, 80), (80, 120), 220, -1)
     cv2.rectangle(template, (size - 90, size - 130), (size - 40, size - 80), 150, -1)
     return template
+
+
+def _make_grid_sheet(width: int = 360, height: int = 260) -> np.ndarray:
+    sheet = np.full((height, width), 235, dtype=np.uint8)
+    cv2.rectangle(sheet, (12, 12), (width - 12, height - 12), 20, 3)
+    for x in range(12, width - 12, 24):
+        cv2.line(sheet, (x, 12), (x, height - 12), 120, 1)
+    for y in range(12, height - 12, 24):
+        cv2.line(sheet, (12, y), (width - 12, y), 120, 1)
+    return sheet
 
 
 def test_align_to_template_recovers_translation():
@@ -40,6 +51,23 @@ def test_align_to_template_handles_featureless_images():
     result = align_to_template(blank, blank)
     assert result.homography is None
     assert np.array_equal(result.aligned, blank)
+
+
+def test_align_to_template_detects_sheet_corners():
+    template = _make_grid_sheet()
+    h, w = template.shape
+    inner = np.array([[12, 12], [w - 12, 12], [w - 12, h - 12], [12, h - 12]], dtype=np.float32)
+    jitter = np.array([[20, 18], [-25, 15], [-18, -22], [16, -28]], dtype=np.float32)
+    warped_corners = inner + jitter
+    warp = cv2.getPerspectiveTransform(inner, warped_corners)
+    frame = cv2.warpPerspective(template, warp, (w, h), borderValue=255)
+    cv2.circle(frame, (w // 2 + 30, h // 2 - 10), 10, 40, -1)
+    result = align_to_template(frame, template)
+    assert result.homography is not None
+    assert result.method == "corners"
+    assert result.quality is not None and result.quality > 0.8
+    diff = cv2.absdiff(result.aligned, template)
+    assert float(diff.mean()) < 25.0
 
 
 def test_diff_and_threshold_detects_dark_region():
@@ -129,7 +157,7 @@ def test_render_overlay_draws_annotations():
 
 
 def test_processing_pipeline_end_to_end(tmp_path: Path):
-    template = np.full((160, 160), 200, dtype=np.uint8)
+    template = _make_feature_rich_template(160)
     template_path = tmp_path / "template.png"
     cv2.imwrite(str(template_path), template)
     scale_model = ScaleModel(mm_per_pixel=0.5, reference_name="test-profile")
@@ -161,3 +189,30 @@ def test_processing_pipeline_end_to_end(tmp_path: Path):
     assert Path(result.overlay_path).exists()
     assert result.stats.align_ms >= 0.0
     assert result.mm_per_pixel == pytest.approx(scale_model.mm_per_pixel) 
+
+
+def test_processing_pipeline_raises_on_bad_alignment(tmp_path: Path):
+    template = np.full((160, 160), 200, dtype=np.uint8)
+    template_path = tmp_path / "template.png"
+    cv2.imwrite(str(template_path), template)
+    scale_model = ScaleModel(mm_per_pixel=0.5, reference_name="test-profile")
+    config = PipelineConfig(
+        diff_params=DiffThresholdParams(use_adaptive=False, gaussian_sigma=0.0, morph_kernel_size=5, morph_iterations=1),
+        detection_params=DetectionParams(
+            min_diameter_mm=6.0,
+            max_diameter_mm=18.0,
+            min_circularity=0.5,
+            min_intensity_drop=5.0,
+            split_large_components=False,
+        ),
+        mask_path=None,
+        template_path=template_path,
+        output_dir=tmp_path / "results",
+        show_r50=True,
+        show_r90=False,
+        collect_debug=True,
+    )
+    pipeline = ProcessingPipeline(scale_model, config)
+    frame = np.zeros((160, 160, 3), dtype=np.uint8)
+    with pytest.raises(AlignmentError):
+        pipeline.process(frame, target_id="bad")

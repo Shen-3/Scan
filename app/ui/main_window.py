@@ -42,6 +42,7 @@ from app.processing.diff_threshold import DiffThresholdParams
 from app.processing.overlay import render_overlay
 from app.processing.pipeline import PipelineConfig, ProcessingPipeline
 from app.processing.scale import ScaleModel
+from app.processing.errors import AlignmentError
 from app.settings_manager import SettingsManager
 from app.ui.shot_view import ShotGraphicsView
 from app.ui.settings_dialog import SettingsDialog
@@ -91,6 +92,7 @@ class MainWindow(QMainWindow):
         self._undo_stack: List[List[ShotPoint]] = []
         self._redo_stack: List[List[ShotPoint]] = []
         self._scale_model = self._load_scale_model()
+        self._status_bar: Optional[QStatusBar] = None
         self._pipeline = self._create_pipeline()
 
         self._setup_layout()
@@ -151,7 +153,7 @@ class MainWindow(QMainWindow):
         if status_bar is None:
             status_bar = QStatusBar(self)
             self.setStatusBar(status_bar)
-        self._status_bar: QStatusBar = status_bar
+        self._status_bar = status_bar
         self._status_bar.showMessage("Готово")
 
     @staticmethod
@@ -212,9 +214,8 @@ class MainWindow(QMainWindow):
     def _create_pipeline(self) -> Optional[ProcessingPipeline]:
         calibration = self.settings_manager.get("calibration", {})
         template_path = Path(calibration.get("template_path", "app/data/template.png"))
-        mask_path = calibration.get("mask_path")
-        if mask_path:
-            mask_path = Path(mask_path)
+        mask_value = calibration.get("mask_path")
+        mask_path = Path(mask_value) if mask_value else None
         if not template_path.exists():
             self._set_status("Нет эталона: загрузите шаблон.")
             return None
@@ -317,9 +318,20 @@ class MainWindow(QMainWindow):
         target_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         try:
             result = self._pipeline.process(self._current_frame, target_id=target_id)
+        except AlignmentError as exc:
+            msg = (
+                f"{exc}\n"
+                f"Надёжные совпадения: {exc.inliers} из {exc.total_matches or 0}. "
+                "Рекомендуется ограничить область маской или повторно откалибровать эталон."
+            )
+            logger.warning("Alignment failed: %s", msg)
+            QMessageBox.warning(self, "Проблема выравнивания", msg)
+            self._set_status(str(exc))
+            return
         except Exception as exc:  # noqa: BLE001 broad except to inform user
             logger.exception("Processing failed")
             QMessageBox.critical(self, "Ошибка обработки", str(exc))
+            self._set_status("Ошибка обработки")
             return
         self._handle_processing_result(result)
 

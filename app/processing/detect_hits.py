@@ -15,7 +15,7 @@ from app.models import ShotPoint, DetectionDebug
 class DetectionParams:
     min_diameter_mm: float = 4.0
     max_diameter_mm: float = 14.0
-    min_circularity: float = 0.6
+    min_circularity: float = 0.05
     min_intensity_drop: float = 15.0
     split_large_components: bool = True
     split_min_distance_mm: float = 5.0
@@ -44,10 +44,28 @@ def detect_hits(
         area_px = cv2.contourArea(contour)
         if area_px <= 0:
             continue
+        eq_radius_px = math.sqrt(area_px / math.pi)
+        if eq_radius_px < min_radius_px:
+            continue
+        if eq_radius_px > max_radius_px * 3.0:
+            if debug:
+                cx_dbg, cy_dbg = _contour_centroid(contour)
+                if cx_dbg is not None and cy_dbg is not None:
+                    rejected.append((float(cx_dbg), float(cy_dbg)))
+            continue
+
         perimeter = max(cv2.arcLength(contour, True), 1e-6)
         circularity = 4.0 * math.pi * area_px / (perimeter * perimeter)
+        if circularity < params.min_circularity:
+            if debug:
+                cx_dbg, cy_dbg = _contour_centroid(contour)
+                if cx_dbg is not None and cy_dbg is not None:
+                    rejected.append((float(cx_dbg), float(cy_dbg)))
+            continue
+
         center_px, radius_px = cv2.minEnclosingCircle(contour)
-        eq_radius_px = math.sqrt(area_px / math.pi)
+        center_tuple = (float(center_px[0]), float(center_px[1]))
+
         local_mask = np.zeros(binary_mask.shape, dtype=np.uint8)
         cv2.drawContours(local_mask, [contour], -1, (255, 255, 255), -1)
         mean_inside = float(cv2.mean(aligned_gray, mask=local_mask)[0])
@@ -59,11 +77,6 @@ def detect_hits(
         if template_gray is not None:
             template_inside = float(cv2.mean(template_gray, mask=local_mask)[0])
             intensity_contrast = max(intensity_contrast, abs(template_inside - mean_inside))
-        center_tuple = (float(center_px[0]), float(center_px[1]))
-        if eq_radius_px < min_radius_px or eq_radius_px > max_radius_px or circularity < params.min_circularity:
-            if debug:
-                rejected.append(center_tuple)
-            continue
         if intensity_contrast < params.min_intensity_drop:
             if debug:
                 rejected.append(center_tuple)

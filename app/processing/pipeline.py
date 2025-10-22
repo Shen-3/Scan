@@ -12,12 +12,13 @@ import cv2
 import numpy as np
 
 from app.models import ProcessingResult, ProcessingStats, ShotPoint
-from app.processing.align import AlignmentResult, align_to_template
+from app.processing.align import AlignmentResult, align_to_template, estimate_target_corners
 from app.processing.detect_hits import DetectionParams, detect_hits, split_roi_components
 from app.processing.diff_threshold import DiffThresholdParams, diff_and_threshold
 from app.processing.metrics import compute_metrics
 from app.processing.overlay import render_overlay
 from app.processing.scale import ScaleModel
+from app.processing.errors import AlignmentError
 from app.utils.image_io import imread, imwrite
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,9 @@ class PipelineConfig:
     show_r50: bool = True
     show_r90: bool = False
     collect_debug: bool = False
+    min_alignment_inliers: int = 10
+    min_alignment_ratio: float = 0.1
+    min_corner_alignment_score: float = 0.7
 
 
 class ProcessingPipeline:
@@ -41,6 +45,7 @@ class ProcessingPipeline:
         self.config = config
         self.template_gray = self._load_template(config.template_path)
         self.mask = self._load_mask(config.mask_path) if config.mask_path else None
+        self.template_corners = estimate_target_corners(self.template_gray)
         self.origin_px = (
             self.template_gray.shape[1] / 2.0,
             self.template_gray.shape[0] / 2.0,
@@ -53,8 +58,14 @@ class ProcessingPipeline:
         frame_gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
 
         align_start = time.perf_counter()
-        alignment = align_to_template(frame_gray, self.template_gray, mask=self.mask)
+        alignment = align_to_template(
+            frame_gray,
+            self.template_gray,
+            mask=self.mask,
+            template_corners=self.template_corners,
+        )
         stats.align_ms = (time.perf_counter() - align_start) * 1000
+        self._validate_alignment(alignment)
 
         diff_start = time.perf_counter()
         binary = diff_and_threshold(
@@ -112,6 +123,10 @@ class ProcessingPipeline:
             binary_mask=binary,
             origin_px=self.origin_px,
             debug_info=debug_info,
+            alignment_inliers=alignment.inliers,
+            alignment_total_matches=alignment.total_matches,
+            alignment_score=alignment.quality or 0.0,
+            alignment_method=alignment.method,
         )
         self._store_intermediate(result, frame_bgr, overlay)
         return result
@@ -167,6 +182,9 @@ class ProcessingPipeline:
     def _load_mask(path: Optional[Path]) -> Optional[np.ndarray]:
         if path is None:
             return None
+        if path.is_dir():
+            logger.warning("Mask path points to a directory, ignoring: %s", path)
+            return None
         if not path.exists():
             logger.warning("Mask path does not exist: %s", path)
             return None
@@ -176,3 +194,38 @@ class ProcessingPipeline:
             return None
         _, mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)
         return mask
+
+    def _validate_alignment(self, alignment: AlignmentResult) -> None:
+        if alignment.homography is None:
+            raise AlignmentError(
+                "Не удалось выровнять изображение по эталону. "
+                "Попробуйте ограничить поиск маской или переснять шаблон.",
+                inliers=alignment.inliers,
+                total_matches=alignment.total_matches,
+            )
+        if alignment.method == "corners":
+            score = alignment.quality or 0.0
+            if score < self.config.min_corner_alignment_score:
+                raise AlignmentError(
+                    "Обнаруженные углы мишени недостаточно надёжны. "
+                    "Проверьте скан и освещение.",
+                    inliers=alignment.inliers,
+                    total_matches=alignment.total_matches,
+                )
+            return
+        if alignment.inliers < self.config.min_alignment_inliers:
+            raise AlignmentError(
+                f"Недостаточно надёжных совпадений ({alignment.inliers} < {self.config.min_alignment_inliers}). "
+                "Проверьте качество скана и маску.",
+                inliers=alignment.inliers,
+                total_matches=alignment.total_matches,
+            )
+        if alignment.total_matches > 0:
+            ratio = alignment.inliers / alignment.total_matches
+            if ratio < self.config.min_alignment_ratio:
+                raise AlignmentError(
+                    f"Слишком низкая доля корректных совпадений ({ratio:.2f}). "
+                    "Попробуйте указать маску с уникальными маркерами или использовать другой эталон.",
+                    inliers=alignment.inliers,
+                    total_matches=alignment.total_matches,
+                )

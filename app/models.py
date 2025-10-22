@@ -77,6 +77,10 @@ class ProcessingResult:
     overlay_image: Optional[np.ndarray] = None
     binary_mask: Optional[np.ndarray] = None
     origin_px: Optional[Tuple[float, float]] = None
+    alignment_inliers: int = 0
+    alignment_total_matches: int = 0
+    alignment_score: float = 0.0
+    alignment_method: str = "orb"
 
     def to_summary_dict(self) -> dict:
         metrics_dict = {}
@@ -101,6 +105,10 @@ class ProcessingResult:
             "timestamp": self.timestamp.isoformat(),
             "point_count": len(self.points),
             "mm_per_pixel": self.mm_per_pixel,
+            "alignment_inliers": self.alignment_inliers,
+            "alignment_total_matches": self.alignment_total_matches,
+            "alignment_score": self.alignment_score,
+            "alignment_method": self.alignment_method,
             **metrics_dict,
         }
 
