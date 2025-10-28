@@ -170,6 +170,9 @@ class ProcessingPipeline:
         if not path.exists():
             logger.warning("Mask path does not exist: %s", path)
             return None
+        if path.is_dir():
+            logger.warning("Mask path points to a directory; ignoring: %s", path)
+            return None
         mask = imread(path, cv2.IMREAD_GRAYSCALE)
         if mask is None:
             logger.warning("Failed to load mask: %s", path)

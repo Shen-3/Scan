@@ -16,6 +16,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "use_adaptive_threshold": False,
         "gaussian_sigma": 1.0,
         "clahe_clip_limit": 2.0,
+        "adaptive_block_size": 11,
+        "adaptive_c": 0.0,
     },
     "calibration": {
         "grid_step_mm": 10.0,

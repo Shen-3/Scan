@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QDoubleSpinBox,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
     QWizard,
@@ -267,7 +268,12 @@ class ScaleCalibrationPage(QWizardPage):
         self.reset_button = QPushButton("Сбросить измерения")
         self.reset_button.clicked.connect(self._reset_measurements)
         self.image_widget.changed.connect(self._update_result)
-        layout.addWidget(self.image_widget, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(False)
+        self.scroll_area.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+        self.scroll_area.setMinimumSize(600, 400)
+        self.scroll_area.setWidget(self.image_widget)
+        layout.addWidget(self.scroll_area)
         layout.addWidget(self.info_label)
         layout.addWidget(QLabel("Известный шаг (мм):"))
         layout.addWidget(self.mm_step_spin)
@@ -318,7 +324,12 @@ class MaskSelectionPage(QWizardPage):
         self.info_label = QLabel("Выделите прямоугольник рабочей области (правая кнопка сбрасывает выбор).")
         self.reset_button = QPushButton("Очистить выделение")
         self.reset_button.clicked.connect(self.image_widget.reset)
-        layout.addWidget(self.image_widget, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(False)
+        self.scroll_area.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+        self.scroll_area.setMinimumSize(600, 400)
+        self.scroll_area.setWidget(self.image_widget)
+        layout.addWidget(self.scroll_area)
         layout.addWidget(self.info_label)
         layout.addWidget(self.reset_button)
 

@@ -19,6 +19,7 @@ class DetectionParams:
     min_intensity_drop: float = 15.0
     split_large_components: bool = True
     split_min_distance_mm: float = 5.0
+    min_diameter_relaxation: float = 0.5
 
 
 def detect_hits(
@@ -39,6 +40,8 @@ def detect_hits(
     min_radius_px = params.min_diameter_mm / 2.0 / mm_per_pixel
     max_radius_px = params.max_diameter_mm / 2.0 / mm_per_pixel
     min_distance_px = params.split_min_distance_mm / mm_per_pixel
+    relaxation = min(max(params.min_diameter_relaxation, 0.0), 1.0)
+    relaxed_radius_px = max(0.0, min_radius_px * relaxation)
 
     for contour in contours:
         area_px = cv2.contourArea(contour)
@@ -60,11 +63,15 @@ def detect_hits(
             template_inside = float(cv2.mean(template_gray, mask=local_mask)[0])
             intensity_contrast = max(intensity_contrast, abs(template_inside - mean_inside))
         center_tuple = (float(center_px[0]), float(center_px[1]))
-        if eq_radius_px < min_radius_px or eq_radius_px > max_radius_px or circularity < params.min_circularity:
+        if eq_radius_px < relaxed_radius_px or eq_radius_px > max_radius_px or circularity < params.min_circularity:
             if debug:
                 rejected.append(center_tuple)
             continue
-        if intensity_contrast < params.min_intensity_drop:
+        small_component = eq_radius_px < min_radius_px
+        threshold_drop = float(params.min_intensity_drop)
+        if small_component:
+            threshold_drop = max(threshold_drop * 2.0, threshold_drop + 12.0)
+        if intensity_contrast < threshold_drop:
             if debug:
                 rejected.append(center_tuple)
             continue
@@ -95,13 +102,14 @@ def detect_hits(
             continue
         cx_val = float(cx)
         cy_val = float(cy)
+        confidence = 0.7 if small_component else 1.0
         points.append(
             ShotPoint(
                 id=next_id,
                 x_mm=(cx_val - origin_px[0]) * mm_per_pixel,
                 y_mm=(cy_val - origin_px[1]) * mm_per_pixel,
                 radius_mm=eq_radius_px * mm_per_pixel,
-                confidence=1.0,
+                confidence=confidence,
             )
         )
         next_id += 1

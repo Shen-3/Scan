@@ -86,6 +86,12 @@ class SettingsDialog(QDialog):
         self.clahe_clip_spin.setRange(0.5, 10.0)
         self.clahe_clip_spin.setDecimals(1)
         self.use_adaptive_checkbox = QCheckBox("Адаптивный порог")
+        self.adaptive_block_spin = QSpinBox()
+        self.adaptive_block_spin.setRange(3, 99)
+        self.adaptive_block_spin.setSingleStep(2)
+        self.adaptive_c_spin = QDoubleSpinBox()
+        self.adaptive_c_spin.setRange(-20.0, 20.0)
+        self.adaptive_c_spin.setDecimals(1)
         self.mm_per_pixel_spin = QDoubleSpinBox()
         self.mm_per_pixel_spin.setRange(0.001, 2.0)
         self.mm_per_pixel_spin.setDecimals(4)
@@ -94,6 +100,8 @@ class SettingsDialog(QDialog):
         layout.addRow("Sigma blur", self.gaussian_sigma_spin)
         layout.addRow("CLAHE clip", self.clahe_clip_spin)
         layout.addRow(self.use_adaptive_checkbox)
+        layout.addRow("Размер окна адаптивного порога", self.adaptive_block_spin)
+        layout.addRow("Смещение порога (C)", self.adaptive_c_spin)
         layout.addRow("Мм/пикс", self.mm_per_pixel_spin)
         return group
 
@@ -143,6 +151,11 @@ class SettingsDialog(QDialog):
         self.gaussian_sigma_spin.setValue(float(processing.get("gaussian_sigma", 1.0)))
         self.clahe_clip_spin.setValue(float(processing.get("clahe_clip_limit", 2.0)))
         self.use_adaptive_checkbox.setChecked(bool(processing.get("use_adaptive_threshold", True)))
+        block_size = int(processing.get("adaptive_block_size", 11))
+        if block_size % 2 == 0:
+            block_size += 1
+        self.adaptive_block_spin.setValue(max(3, block_size))
+        self.adaptive_c_spin.setValue(float(processing.get("adaptive_c", 0.0)))
         calibration = self.settings_manager.get("calibration", {})
         self.mm_per_pixel_spin.setValue(float(calibration.get("mm_per_pixel", 0.05)))
         export = self.settings_manager.get("export", {})
@@ -162,6 +175,8 @@ class SettingsDialog(QDialog):
         processing["gaussian_sigma"] = self.gaussian_sigma_spin.value()
         processing["clahe_clip_limit"] = self.clahe_clip_spin.value()
         processing["use_adaptive_threshold"] = self.use_adaptive_checkbox.isChecked()
+        processing["adaptive_block_size"] = self.adaptive_block_spin.value()
+        processing["adaptive_c"] = self.adaptive_c_spin.value()
         self.settings_manager.set("processing", processing)
         self.settings_manager.set("active_camera_id", self.camera_id_spin.value())
 

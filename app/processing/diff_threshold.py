@@ -15,6 +15,8 @@ class DiffThresholdParams:
     morph_iterations: int = 1
     clahe_clip_limit: float = 2.0
     clahe_tile_grid_size: int = 8
+    adaptive_block_size: int = 11
+    adaptive_c: float = 0.0
 
 
 def normalize_image(gray: np.ndarray, clahe_clip_limit: float = 2.0, tile_grid_size: int = 8) -> np.ndarray:
@@ -38,13 +40,14 @@ def diff_and_threshold(
         diff = cv2.GaussianBlur(diff, (ksize, ksize), params.gaussian_sigma)
 
     if params.use_adaptive:
+        block_size = max(3, params.adaptive_block_size | 1)
         binary = cv2.adaptiveThreshold(
             diff,
             255,
             cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
             cv2.THRESH_BINARY,
-            11,
-            2,
+            block_size,
+            params.adaptive_c,
         )
     else:
         _, binary = cv2.threshold(diff, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
@@ -56,4 +59,3 @@ def diff_and_threshold(
     binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=params.morph_iterations)
     binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=params.morph_iterations)
     return binary
-

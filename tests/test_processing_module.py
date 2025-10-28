@@ -52,6 +52,24 @@ def test_diff_and_threshold_detects_dark_region():
     assert int((binary > 0).sum()) > 250
 
 
+def test_diff_and_threshold_adaptive_uses_c_offset():
+    template = np.full((160, 160), 200, dtype=np.uint8)
+    aligned = template.copy()
+    cv2.circle(aligned, (80, 80), 18, 40, -1)
+    params = DiffThresholdParams(
+        use_adaptive=True,
+        gaussian_sigma=0.0,
+        morph_kernel_size=3,
+        morph_iterations=1,
+        adaptive_block_size=11,
+        adaptive_c=0.0,
+    )
+    binary = diff_and_threshold(aligned, template, params)
+    ratio = float((binary > 0).sum()) / binary.size
+    assert ratio < 0.2
+    assert int((binary[60:100, 60:100] > 0).sum()) > 0
+
+
 def test_detect_hits_returns_points_with_debug():
     binary = np.zeros((160, 160), dtype=np.uint8)
     centers = [(50, 70), (110, 90)]
@@ -74,6 +92,34 @@ def test_detect_hits_returns_points_with_debug():
     ys = sorted([round(p.y_mm, 1) for p in points])
     assert xs == sorted([round(cx * mm_per_pixel, 1) for cx, _ in centers])
     assert ys == sorted([round(cy * mm_per_pixel, 1) for _, cy in centers])
+    assert debug is not None
+    assert not debug.rejected
+
+
+def test_detect_hits_handles_small_but_contrasty_component():
+    size = 400
+    template = np.full((size, size), 200, dtype=np.uint8)
+    cv2.circle(template, (size // 2, size // 2), 120, 80, -1)
+    frame = template.copy()
+    cv2.circle(frame, (size // 2, size // 2), 18, 20, -1)
+    params = DiffThresholdParams(use_adaptive=True, gaussian_sigma=1.0, adaptive_c=0.0)
+    binary = diff_and_threshold(frame, template, params)
+    detection_params = DetectionParams(
+        min_diameter_mm=4.5,
+        max_diameter_mm=18.0,
+        min_intensity_drop=5.0,
+    )
+    mm_per_pixel = 0.0833
+    points, debug = detect_hits(
+        binary,
+        frame,
+        mm_per_pixel=mm_per_pixel,
+        params=detection_params,
+        origin_px=(size / 2, size / 2),
+        debug=True,
+        template_gray=template,
+    )
+    assert len(points) == 1
     assert debug is not None
     assert not debug.rejected
 

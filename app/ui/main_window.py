@@ -212,21 +212,39 @@ class MainWindow(QMainWindow):
     def _create_pipeline(self) -> Optional[ProcessingPipeline]:
         calibration = self.settings_manager.get("calibration", {})
         template_path = Path(calibration.get("template_path", "app/data/template.png"))
-        mask_path = calibration.get("mask_path")
-        if mask_path:
-            mask_path = Path(mask_path)
+        mask_value = calibration.get("mask_path")
+        mask_path = None
+        if mask_value:
+            candidate = Path(mask_value).expanduser()
+            if str(candidate) not in {".", ""}:
+                mask_path = candidate
         if not template_path.exists():
             self._set_status("Нет эталона: загрузите шаблон.")
             return None
         processing_settings = self.settings_manager.get("processing", {})
-        diff_params = DiffThresholdParams(
-            use_adaptive=processing_settings.get("use_adaptive_threshold", True),
-            gaussian_sigma=processing_settings.get("gaussian_sigma", 1.0),
-            clahe_clip_limit=processing_settings.get("clahe_clip_limit", 2.0),
-        )
         detection_params = DetectionParams(
             min_diameter_mm=processing_settings.get("min_hole_diameter_mm", 4.5),
             max_diameter_mm=processing_settings.get("max_hole_diameter_mm", 12.0),
+        )
+        use_adaptive = processing_settings.get("use_adaptive_threshold", True)
+        morph_kernel_size = int(processing_settings.get("morph_kernel_size", 3))
+        morph_iterations = int(processing_settings.get("morph_iterations", 1))
+        if use_adaptive and self._scale_model.mm_per_pixel > 0:
+            expected_radius_px = detection_params.min_diameter_mm / (2.0 * self._scale_model.mm_per_pixel)
+            adaptive_kernel = int(round(expected_radius_px))
+            adaptive_kernel = max(3, min(15, adaptive_kernel))
+            adaptive_kernel |= 1  # ensure odd size for morphological ops
+            morph_kernel_size = max(morph_kernel_size, adaptive_kernel)
+            if morph_iterations < 1:
+                morph_iterations = 1
+        diff_params = DiffThresholdParams(
+            use_adaptive=use_adaptive,
+            gaussian_sigma=processing_settings.get("gaussian_sigma", 1.0),
+            clahe_clip_limit=processing_settings.get("clahe_clip_limit", 2.0),
+            adaptive_block_size=processing_settings.get("adaptive_block_size", 11),
+            adaptive_c=processing_settings.get("adaptive_c", 0.0),
+            morph_kernel_size=morph_kernel_size,
+            morph_iterations=morph_iterations,
         )
         export_settings = self.settings_manager.get("export", {})
         output_dir = Path(export_settings.get("output_dir", "results"))
