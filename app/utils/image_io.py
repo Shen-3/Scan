@@ -33,4 +33,19 @@ def imwrite(
     return True
 
 
-__all__ = ["imread", "imwrite"]
+def resize_to_max_edge(image: np.ndarray, max_edge: int) -> np.ndarray:
+    """Resize keeping aspect ratio so the longest edge does not exceed max_edge."""
+    if max_edge <= 0:
+        return image
+    height, width = image.shape[:2]
+    max_dim = max(height, width)
+    if max_dim <= max_edge:
+        return image
+    scale = max_edge / float(max_dim)
+    new_width = max(1, int(round(width * scale)))
+    new_height = max(1, int(round(height * scale)))
+    interpolation = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LINEAR
+    return cv2.resize(image, (new_width, new_height), interpolation=interpolation)
+
+
+__all__ = ["imread", "imwrite", "resize_to_max_edge"]

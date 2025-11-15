@@ -45,8 +45,8 @@ from app.processing.scale import ScaleModel
 from app.settings_manager import SettingsManager
 from app.ui.shot_view import ShotGraphicsView
 from app.ui.settings_dialog import SettingsDialog
-from app.ui.calibration_wizard import CalibrationWizard
-from app.utils.image_io import imread, imwrite
+from app.ui.calibration_wizard import CalibrationWizard, MAX_TEMPLATE_EDGE
+from app.utils.image_io import imread, imwrite, resize_to_max_edge
 
 logger = logging.getLogger(__name__)
 
@@ -316,6 +316,7 @@ class MainWindow(QMainWindow):
         if image is None:
             QMessageBox.warning(self, "Ошибка", "Не удалось прочитать эталон.")
             return
+        image = resize_to_max_edge(image, MAX_TEMPLATE_EDGE)
         if not imwrite(target_path, image):
             QMessageBox.warning(self, "Ошибка", "Не удалось сохранить эталон.")
             return
@@ -532,6 +533,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Нет кадра", "Сначала снимите кадр с камеры.")
             return
         template = cv2.cvtColor(self._current_frame, cv2.COLOR_BGR2GRAY)
+        template = resize_to_max_edge(template, MAX_TEMPLATE_EDGE)
         calibration = self.settings_manager.get("calibration", {})
         template_path = Path(calibration.get("template_path", "app/data/template.png"))
         template_path.parent.mkdir(parents=True, exist_ok=True)

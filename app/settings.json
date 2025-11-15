@@ -17,7 +17,7 @@
   },
   "calibration": {
     "grid_step_mm": 10.0,
-    "mask_path": ".",
+    "mask_path": "",
     "template_path": "app/data/template.png",
     "mm_per_pixel": 0.4167
   },
