@@ -8,13 +8,9 @@ from typing import List, Optional, Tuple
 from PyQt6.QtCore import QPoint, QRect, Qt, pyqtSignal
 from PyQt6.QtGui import QImage, QMouseEvent, QPixmap
 from PyQt6.QtWidgets import (
-    QComboBox,
-    QDialog,
     QFrame,
-    QHBoxLayout,
     QLabel,
     QPushButton,
-    QSpinBox,
     QDoubleSpinBox,
     QScrollArea,
     QVBoxLayout,
@@ -23,8 +19,6 @@ from PyQt6.QtWidgets import (
     QWizardPage,
     QMessageBox,
 )
-
-from app.camera import CameraManager, CameraError
 from app.settings_manager import SettingsManager
 from app.processing.scale import mm_per_pixel_from_grid
 from app.utils.image_io import imread, imwrite
@@ -151,104 +145,44 @@ class CalibrationImageWidget(QLabel):
         self.setPixmap(pixmap)
 
 
-class CameraSelectionPage(QWizardPage):
+class TemplatePreviewPage(QWizardPage):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.setTitle("Выбор камеры")
+        self.setTitle("Эталон")
         layout = QVBoxLayout(self)
-        row = QHBoxLayout()
-        self.camera_combo = QComboBox()
-        self.refresh_button = QPushButton("Обновить список")
-        self.refresh_button.clicked.connect(self._populate_cameras)
-        row.addWidget(QLabel("Устройство:"))
-        row.addWidget(self.camera_combo, 1)
-        row.addWidget(self.refresh_button)
-        layout.addLayout(row)
-
-        res_layout = QHBoxLayout()
-        self.res_w_spin = QSpinBox()
-        self.res_w_spin.setRange(640, 7680)
-        self.res_w_spin.setSingleStep(160)
-        self.res_h_spin = QSpinBox()
-        self.res_h_spin.setRange(480, 4320)
-        self.res_h_spin.setSingleStep(120)
-        res_layout.addWidget(QLabel("Ширина:"))
-        res_layout.addWidget(self.res_w_spin)
-        res_layout.addWidget(QLabel("Высота:"))
-        res_layout.addWidget(self.res_h_spin)
-        layout.addLayout(res_layout)
-        layout.addStretch()
-
-    def initializePage(self) -> None:
-        self._populate_cameras()
-        wizard: CalibrationWizard = self.wizard()  # type: ignore[assignment]
-        camera_id = wizard.settings_manager.get("active_camera_id", 0) or 0
-        idx = self.camera_combo.findData(int(camera_id))
-        if idx >= 0:
-            self.camera_combo.setCurrentIndex(idx)
-        processing = wizard.settings_manager.get("processing", {})
-        resolution = processing.get("target_resolution", [1920, 1080])
-        self.res_w_spin.setValue(int(resolution[0]))
-        self.res_h_spin.setValue(int(resolution[1]))
-
-    def _populate_cameras(self) -> None:
-        self.camera_combo.clear()
-        devices = CameraManager.list_devices()
-        for idx in devices:
-            self.camera_combo.addItem(f"Камера {idx}", idx)
-        if not devices:
-            self.camera_combo.addItem("Нет камер", -1)
-
-    def validatePage(self) -> bool:
-        if self.camera_combo.currentData() == -1:
-            QMessageBox.warning(self, "Камера", "Не найдено доступных камер.")
-            return False
-        wizard: CalibrationWizard = self.wizard()  # type: ignore[assignment]
-        wizard.selected_camera = int(self.camera_combo.currentData())
-        wizard.target_resolution = (self.res_w_spin.value(), self.res_h_spin.value())
-        return True
-
-
-class TemplateCapturePage(QWizardPage):
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
-        self.setTitle("Съёмка эталона")
-        layout = QVBoxLayout(self)
-        self.preview = QLabel("Нажмите «Сделать снимок»")
+        self.preview = QLabel("Эталон не найден.")
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.capture_button = QPushButton("Сделать снимок")
+        self.preview.setMinimumSize(400, 300)
+        self.info_label = QLabel("")
+        self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.reload_button = QPushButton("Перечитать эталон")
+        self.reload_button.clicked.connect(self._reload_template)
         layout.addWidget(self.preview, 1)
-        layout.addWidget(self.capture_button)
-        self.capture_button.clicked.connect(self._capture)
+        layout.addWidget(self.info_label)
+        layout.addWidget(self.reload_button)
 
     def initializePage(self) -> None:
-        wizard: CalibrationWizard = self.wizard()  # type: ignore[assignment]
-        if wizard.template_gray is not None:
-            pixmap = _np_to_pixmap(cv2.cvtColor(wizard.template_gray, cv2.COLOR_GRAY2BGR))
-            self.preview.setPixmap(pixmap.scaledToWidth(400, Qt.TransformationMode.SmoothTransformation))
-        else:
-            self.preview.setText("Нажмите «Сделать снимок»")
+        self._reload_template()
 
-    def _capture(self) -> None:
+    def _reload_template(self) -> None:
         wizard: CalibrationWizard = self.wizard()  # type: ignore[assignment]
-        if wizard.selected_camera is None:
-            QMessageBox.information(self, "Камера", "Сначала выберите камеру.")
-            return
-        try:
-            with CameraManager(device_index=wizard.selected_camera, target_resolution=wizard.target_resolution) as camera:
-                frame = camera.capture_frame().data
-        except CameraError as exc:
-            QMessageBox.critical(self, "Ошибка камеры", str(exc))
-            return
-        wizard.captured_frame = frame
-        wizard.template_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        pixmap = _np_to_pixmap(frame)
-        self.preview.setPixmap(pixmap.scaledToWidth(400, Qt.TransformationMode.SmoothTransformation))
+        template = None
+        if wizard.template_path.exists():
+            template = imread(wizard.template_path, cv2.IMREAD_GRAYSCALE)
+        wizard.template_gray = template
+        if template is not None:
+            pixmap = _np_to_pixmap(template)
+            self.preview.setPixmap(pixmap.scaledToWidth(400, Qt.TransformationMode.SmoothTransformation))
+            self.info_label.setText(f"Файл: {wizard.template_path}")
+        else:
+            self.preview.setText("Эталон не найден. Сохраните его в главном окне.")
+            self.preview.setPixmap(QPixmap())
+            self.info_label.setText(str(wizard.template_path))
 
     def validatePage(self) -> bool:
         wizard: CalibrationWizard = self.wizard()  # type: ignore[assignment]
         if wizard.template_gray is None:
-            QMessageBox.warning(self, "Эталон", "Сделайте снимок эталонной мишени.")
+            QMessageBox.warning(self, "Эталон", "Сначала сохраните эталон в главном окне.")
             return False
         return True
 
@@ -350,7 +284,7 @@ class MaskSelectionPage(QWizardPage):
 
 
 class CalibrationWizard(QWizard):
-    """Full calibration workflow: camera selection, template capture, scale, mask."""
+    """Full calibration workflow: template preview, scale tuning, mask definition."""
 
     def __init__(self, settings_manager: SettingsManager, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -358,15 +292,12 @@ class CalibrationWizard(QWizard):
         self.setWindowTitle("Мастер калибровки")
         self.setWizardStyle(QWizard.WizardStyle.ModernStyle)
 
-        self.selected_camera: Optional[int] = None
-        self.target_resolution: Tuple[int, int] = (1920, 1080)
         calibration = settings_manager.get("calibration", {})
         self.grid_step_mm: float = float(calibration.get("grid_step_mm", 10.0))
         self.mm_per_pixel: float = float(calibration.get("mm_per_pixel", 0.05))
         self.template_path = Path(calibration.get("template_path", "app/data/template.png"))
         self.mask_path = Path(calibration.get("mask_path", "app/data/mask.png"))
         self.template_gray: Optional[np.ndarray] = None
-        self.captured_frame: Optional[np.ndarray] = None
         self.mask_rect: Optional[QRect] = None
 
         if self.template_path.exists():
@@ -374,8 +305,7 @@ class CalibrationWizard(QWizard):
             if existing is not None:
                 self.template_gray = existing
 
-        self.addPage(CameraSelectionPage(self))
-        self.addPage(TemplateCapturePage(self))
+        self.addPage(TemplatePreviewPage(self))
         self.addPage(ScaleCalibrationPage(self))
         self.addPage(MaskSelectionPage(self))
 
@@ -404,12 +334,6 @@ class CalibrationWizard(QWizard):
         super().accept()
 
     def _update_settings(self) -> None:
-        processing = dict(self.settings_manager.get("processing", {}))
-        processing["target_resolution"] = [self.target_resolution[0], self.target_resolution[1]]
-        self.settings_manager.set("processing", processing)
-        if self.selected_camera is not None:
-            self.settings_manager.set("active_camera_id", self.selected_camera)
-
         calibration = dict(self.settings_manager.get("calibration", {}))
         calibration["grid_step_mm"] = self.grid_step_mm
         calibration["mm_per_pixel"] = self.mm_per_pixel

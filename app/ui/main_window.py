@@ -9,7 +9,7 @@ from typing import Optional, List
 
 import cv2
 import numpy as np
-from PyQt6.QtCore import QPointF, Qt, QTimer
+from PyQt6.QtCore import QPointF, Qt
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -85,6 +85,8 @@ class MainWindow(QMainWindow):
         ui_settings = self.settings_manager.get("ui", {})
         self.show_problems_checkbox.setChecked(bool(ui_settings.get("show_problem_candidates", False)))
 
+        # initialize early so status updates can be emitted before UI layout is created
+        self._status_bar: Optional[QStatusBar] = None
         self._current_frame: Optional[np.ndarray] = None
         self._current_result: Optional[ProcessingResult] = None
         self._next_point_id: int = 1
@@ -95,8 +97,6 @@ class MainWindow(QMainWindow):
 
         self._setup_layout()
         self._connect_signals()
-        if self._pipeline is None:
-            QTimer.singleShot(0, self._open_calibration_wizard)
 
     def _setup_layout(self) -> None:
         right_panel = QWidget()
@@ -151,7 +151,7 @@ class MainWindow(QMainWindow):
         if status_bar is None:
             status_bar = QStatusBar(self)
             self.setStatusBar(status_bar)
-        self._status_bar: QStatusBar = status_bar
+        self._status_bar = status_bar
         self._status_bar.showMessage("Готово")
 
     @staticmethod
