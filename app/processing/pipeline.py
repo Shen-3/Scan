@@ -12,7 +12,7 @@ import cv2
 import numpy as np
 
 from app.models import ProcessingResult, ProcessingStats, ShotPoint
-from app.processing.align import AlignmentResult, align_to_template
+from app.processing.align import align_with_border
 from app.processing.detect_hits import DetectionParams, detect_hits, split_roi_components
 from app.processing.diff_threshold import DiffThresholdParams, diff_and_threshold
 from app.processing.metrics import compute_metrics
@@ -53,7 +53,14 @@ class ProcessingPipeline:
         frame_gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
 
         align_start = time.perf_counter()
-        alignment = align_to_template(frame_gray, self.template_gray, mask=self.mask)
+        alignment = align_with_border(
+            frame_gray,
+            self.template_gray,
+            mask=self.mask,
+            max_features=1500,
+            good_match_ratio=0.75,
+            ransac_reproj_threshold=3.0,
+        )
         stats.align_ms = (time.perf_counter() - align_start) * 1000
 
         diff_start = time.perf_counter()
