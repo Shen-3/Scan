@@ -24,6 +24,138 @@ class AlignmentResult:
     total_matches: int
 
 
+def _order_points(points: np.ndarray) -> np.ndarray:
+    """Return points ordered as top-left, top-right, bottom-right, bottom-left."""
+    rect = np.zeros((4, 2), dtype=np.float32)
+    s = points.sum(axis=1)
+    rect[0] = points[np.argmin(s)]
+    rect[2] = points[np.argmax(s)]
+    diff = np.diff(points, axis=1)
+    rect[1] = points[np.argmin(diff)]
+    rect[3] = points[np.argmax(diff)]
+    return rect
+
+
+def _quad_aspect_ratio(quad: np.ndarray) -> float:
+    tl, tr, br, bl = quad
+    width_top = np.linalg.norm(tr - tl)
+    width_bottom = np.linalg.norm(br - bl)
+    height_left = np.linalg.norm(bl - tl)
+    height_right = np.linalg.norm(br - tr)
+    width = (width_top + width_bottom) / 2.0
+    height = (height_left + height_right) / 2.0
+    if height == 0:
+        return 0.0
+    return width / height
+
+
+def detect_border_quad(
+    gray: np.ndarray,
+    aspect_ratio: float,
+    min_area_ratio: float = 0.4,
+    aspect_tolerance: float = 0.2,
+) -> Optional[np.ndarray]:
+    """
+    Find the outer rectangular border of the target.
+
+    Returns 4x2 float array of corner points ordered TL, TR, BR, BL or None.
+    """
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blur, 40, 120)
+    edges = cv2.dilate(edges, None, iterations=2)
+    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return None
+
+    h, w = gray.shape[:2]
+    min_area = min_area_ratio * w * h
+    best = None
+    for contour in sorted(contours, key=cv2.contourArea, reverse=True):
+        area = cv2.contourArea(contour)
+        if area < min_area:
+            continue
+        peri = cv2.arcLength(contour, True)
+        approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
+        if len(approx) != 4:
+            continue
+        quad = _order_points(approx.reshape(4, 2))
+        ar = _quad_aspect_ratio(quad)
+        lower = aspect_ratio * (1 - aspect_tolerance)
+        upper = aspect_ratio * (1 + aspect_tolerance)
+        if lower <= ar <= upper:
+            best = quad
+            break
+    return best
+
+
+def align_with_border(
+    frame_gray: np.ndarray,
+    template_gray: np.ndarray,
+    mask: Optional[np.ndarray] = None,
+    max_features: int = 1500,
+    good_match_ratio: float = 0.75,
+    ransac_reproj_threshold: float = 3.0,
+    aspect_tolerance: float = 0.2,
+    min_area_ratio: float = 0.4,
+    refine_with_features: bool = True,
+) -> AlignmentResult:
+    """
+    Align using the outer black border as primary cue; optionally refine with ORB.
+    Falls back to pure ORB if border not detected.
+    """
+    h, w = template_gray.shape[:2]
+    aspect = w / float(h)
+    quad = detect_border_quad(frame_gray, aspect_ratio=aspect, min_area_ratio=min_area_ratio, aspect_tolerance=aspect_tolerance)
+    if quad is None:
+        logger.info("Border not found; falling back to feature alignment")
+        return align_to_template(
+            frame_gray,
+            template_gray,
+            mask=mask,
+            max_features=max_features,
+            good_match_ratio=good_match_ratio,
+            ransac_reproj_threshold=ransac_reproj_threshold,
+        )
+
+    dst = np.array([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], dtype=np.float32)
+    H_border = cv2.getPerspectiveTransform(quad.astype(np.float32), dst)
+    if np.linalg.cond(H_border) > 1e6:
+        logger.warning("Border homography unstable; falling back to feature alignment")
+        return align_to_template(
+            frame_gray,
+            template_gray,
+            mask=mask,
+            max_features=max_features,
+            good_match_ratio=good_match_ratio,
+            ransac_reproj_threshold=ransac_reproj_threshold,
+        )
+
+    warped = cv2.warpPerspective(frame_gray, H_border, (w, h))
+    if not refine_with_features:
+        return AlignmentResult(aligned=warped, homography=H_border, inliers=0, total_matches=0)
+
+    refine = align_to_template(
+        warped,
+        template_gray,
+        mask=mask,
+        max_features=max_features,
+        good_match_ratio=good_match_ratio,
+        ransac_reproj_threshold=ransac_reproj_threshold,
+    )
+    if refine.homography is None:
+        return AlignmentResult(aligned=warped, homography=H_border, inliers=0, total_matches=0)
+
+    combined = refine.homography @ H_border
+    return AlignmentResult(
+        aligned=refine.aligned,
+        homography=combined,
+        inliers=refine.inliers,
+        total_matches=refine.total_matches,
+    )
+
+
 def align_to_template(
     frame_gray: np.ndarray,
     template_gray: np.ndarray,

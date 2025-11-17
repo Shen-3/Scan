@@ -13,13 +13,13 @@
     "gaussian_sigma": 1.0,
     "clahe_clip_limit": 2.0,
     "adaptive_block_size": 11,
-    "adaptive_c": -0.5
+    "adaptive_c": 0.0
   },
   "calibration": {
     "grid_step_mm": 10.0,
     "mask_path": "",
     "template_path": "app/data/template.png",
-    "mm_per_pixel": 0.4167
+    "mm_per_pixel": 0.9
   },
   "export": {
     "output_dir": "results",
