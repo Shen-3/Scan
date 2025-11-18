@@ -16,7 +16,7 @@ class DetectionParams:
     min_diameter_mm: float = 4.0
     max_diameter_mm: float = 14.0
     min_circularity: float = 0.6
-    min_intensity_drop: float = 15.0
+    min_intensity_drop: float = 8.0
     split_large_components: bool = True
     split_min_distance_mm: float = 5.0
     min_diameter_relaxation: float = 0.5
@@ -70,7 +70,7 @@ def detect_hits(
         small_component = eq_radius_px < min_radius_px
         threshold_drop = float(params.min_intensity_drop)
         if small_component:
-            threshold_drop = max(threshold_drop * 2.0, threshold_drop + 12.0)
+            threshold_drop = max(threshold_drop * 1.3, threshold_drop + 5.0)
         if intensity_contrast < threshold_drop:
             if debug:
                 rejected.append(center_tuple)
@@ -113,6 +113,34 @@ def detect_hits(
             )
         )
         next_id += 1
+
+    # If nothing was accepted but contours were present, run a relaxed pass that only checks size and shape.
+    if not points and contours:
+        for contour in contours:
+            area_px = cv2.contourArea(contour)
+            if area_px <= 0:
+                continue
+            perimeter = max(cv2.arcLength(contour, True), 1e-6)
+            circularity = 4.0 * math.pi * area_px / (perimeter * perimeter)
+            eq_radius_px = math.sqrt(area_px / math.pi)
+            if eq_radius_px < relaxed_radius_px or eq_radius_px > max_radius_px:
+                continue
+            if circularity < params.min_circularity * 0.8:
+                continue
+            cx, cy = _contour_centroid(contour)
+            if cx is None or cy is None:
+                continue
+            points.append(
+                ShotPoint(
+                    id=next_id,
+                    x_mm=(float(cx) - origin_px[0]) * mm_per_pixel,
+                    y_mm=(float(cy) - origin_px[1]) * mm_per_pixel,
+                    radius_mm=eq_radius_px * mm_per_pixel,
+                    confidence=0.4,
+                    source="auto",
+                )
+            )
+            next_id += 1
 
     debug_info = DetectionDebug(rejected=rejected, segments=segments) if debug else None
     return points, debug_info

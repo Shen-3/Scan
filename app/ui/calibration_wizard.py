@@ -23,7 +23,7 @@ from app.processing.scale import mm_per_pixel_from_grid
 from app.utils.image_io import imread, imwrite, resize_to_max_edge
 
 MAX_CALIBRATION_DISPLAY_EDGE = 900
-MAX_TEMPLATE_EDGE = 2048
+PREVIEW_TEMPLATE_EDGE = 2048
 
 def _np_to_pixmap(image: np.ndarray) -> QPixmap:
     if image.ndim == 2:
@@ -155,10 +155,10 @@ class TemplatePreviewPage(QWizardPage):
             template = imread(wizard.template_path, cv2.IMREAD_GRAYSCALE)
             if template is not None:
                 original_shape = template.shape[:2]
-                template = resize_to_max_edge(template, MAX_TEMPLATE_EDGE)
         wizard.template_gray = template
         if template is not None:
-            pixmap = _np_to_pixmap(template)
+            preview = resize_to_max_edge(template, PREVIEW_TEMPLATE_EDGE)
+            pixmap = _np_to_pixmap(preview)
             self.preview.setPixmap(pixmap.scaledToWidth(400, Qt.TransformationMode.SmoothTransformation))
             dims = f"{template.shape[1]}×{template.shape[0]}"
             if original_shape and template.shape[:2] != original_shape:
@@ -253,7 +253,7 @@ class CalibrationWizard(QWizard):
         if self.template_path.exists():
             existing = imread(self.template_path, cv2.IMREAD_GRAYSCALE)
             if existing is not None:
-                self.template_gray = resize_to_max_edge(existing, MAX_TEMPLATE_EDGE)
+                self.template_gray = existing
 
         self.addPage(TemplatePreviewPage(self))
         self.addPage(ScaleCalibrationPage(self))
@@ -278,4 +278,4 @@ class CalibrationWizard(QWizard):
         self.settings_manager.set("calibration", calibration)
 
 
-__all__ = ["CalibrationWizard", "MAX_TEMPLATE_EDGE"]
+__all__ = ["CalibrationWizard", "PREVIEW_TEMPLATE_EDGE"]
