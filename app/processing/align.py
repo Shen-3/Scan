@@ -107,9 +107,21 @@ def align_with_border(
     """
     h, w = template_gray.shape[:2]
     aspect = w / float(h)
-    quad = detect_border_quad(frame_gray, aspect_ratio=aspect, min_area_ratio=min_area_ratio, aspect_tolerance=aspect_tolerance)
-    if quad is None:
-        logger.info("Border not found; falling back to feature alignment")
+    frame_quad = detect_border_quad(
+        frame_gray,
+        aspect_ratio=aspect,
+        min_area_ratio=min_area_ratio,
+        aspect_tolerance=aspect_tolerance,
+    )
+    template_quad = detect_border_quad(
+        template_gray,
+        aspect_ratio=aspect,
+        min_area_ratio=min_area_ratio,
+        aspect_tolerance=aspect_tolerance,
+    )
+
+    if frame_quad is None:
+        logger.info("Border not found in frame; falling back to feature alignment")
         return align_to_template(
             frame_gray,
             template_gray,
@@ -119,8 +131,18 @@ def align_with_border(
             ransac_reproj_threshold=ransac_reproj_threshold,
         )
 
-    dst = np.array([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], dtype=np.float32)
-    H_border = cv2.getPerspectiveTransform(quad.astype(np.float32), dst)
+    if template_quad is None:
+        logger.warning("Border not found in template; falling back to feature alignment")
+        return align_to_template(
+            frame_gray,
+            template_gray,
+            mask=mask,
+            max_features=max_features,
+            good_match_ratio=good_match_ratio,
+            ransac_reproj_threshold=ransac_reproj_threshold,
+        )
+
+    H_border = cv2.getPerspectiveTransform(frame_quad.astype(np.float32), template_quad.astype(np.float32))
     if np.linalg.cond(H_border) > 1e6:
         logger.warning("Border homography unstable; falling back to feature alignment")
         return align_to_template(
