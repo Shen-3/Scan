@@ -69,6 +69,8 @@ class ProcessingPipeline:
             self.template_gray,
             params=self.config.diff_params,
             mask=self.mask,
+            debug_dir=self.config.output_dir if self.config.collect_debug else None,
+            target_id=target_id,
         )
         stats.diff_ms = (time.perf_counter() - diff_start) * 1000
 

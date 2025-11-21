@@ -7,19 +7,19 @@
       1920,
       1080
     ],
-    "min_hole_diameter_mm": 2.5,
-    "max_hole_diameter_mm": 8.0,
+    "min_hole_diameter_mm": 1.0,
+    "max_hole_diameter_mm": 30.0,
     "use_adaptive_threshold": false,
-    "gaussian_sigma": 1.0,
-    "clahe_clip_limit": 2.0,
-    "adaptive_block_size": 11,
+    "gaussian_sigma": 0.0,
+    "clahe_clip_limit": 0.5,
+    "adaptive_block_size": 3,
     "adaptive_c": 0.0
   },
   "calibration": {
     "grid_step_mm": 10.0,
     "mask_path": "",
     "template_path": "app\\data\\template.png",
-    "mm_per_pixel": 0.08
+    "mm_per_pixel": 0.0825
   },
   "export": {
     "output_dir": "results",
@@ -35,6 +35,6 @@
     "language": "ru",
     "show_problem_candidates": false,
     "show_r50": true,
-    "show_r90": true
+    "show_r90": false
   }
 }
