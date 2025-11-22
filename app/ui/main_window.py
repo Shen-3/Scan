@@ -230,6 +230,7 @@ class MainWindow(QMainWindow):
             split_min_distance_mm=processing_settings.get("split_min_distance_mm", 5.0),
             min_diameter_relaxation=processing_settings.get("min_diameter_relaxation", 0.5),
         )
+        bullet_diameter_mm = float(processing_settings.get("bullet_diameter_mm", 6.0))
         use_adaptive = processing_settings.get("use_adaptive_threshold", True)
         morph_kernel_size = int(processing_settings.get("morph_kernel_size", 3))
         morph_iterations = int(processing_settings.get("morph_iterations", 1))
@@ -257,6 +258,7 @@ class MainWindow(QMainWindow):
         config = PipelineConfig(
             diff_params=diff_params,
             detection_params=detection_params,
+            bullet_diameter_mm=bullet_diameter_mm,
             mask_path=mask_path,
             template_path=template_path,
             output_dir=output_dir,
@@ -401,11 +403,7 @@ class MainWindow(QMainWindow):
             return
         scene_point = QPointF(x_px, y_px)
         x_mm, y_mm = self.shot_view.scene_to_mm(scene_point)
-        radius_mm = float(
-            (self.settings_manager.get("processing", {}).get("min_hole_diameter_mm", 4.5)
-             + self.settings_manager.get("processing", {}).get("max_hole_diameter_mm", 12.0))
-            / 4.0
-        )
+        radius_mm = float(self.settings_manager.get("processing", {}).get("bullet_diameter_mm", 6.0) / 2.0)
         point = ShotPoint(
             id=self._next_point_id,
             x_mm=x_mm,

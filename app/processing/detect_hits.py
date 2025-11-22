@@ -28,6 +28,7 @@ def detect_hits(
     mm_per_pixel: float,
     params: DetectionParams,
     origin_px: Tuple[float, float] = (0.0, 0.0),
+    bullet_diameter_mm: Optional[float] = None,
     debug: bool = False,
     template_gray: Optional[np.ndarray] = None,
 ) -> Tuple[List[ShotPoint], Optional[DetectionDebug]]:
@@ -42,6 +43,7 @@ def detect_hits(
     min_distance_px = params.split_min_distance_mm / mm_per_pixel
     relaxation = min(max(params.min_diameter_relaxation, 0.0), 1.0)
     relaxed_radius_px = max(0.0, min_radius_px * relaxation)
+    display_radius_mm = bullet_diameter_mm / 2.0 if bullet_diameter_mm and bullet_diameter_mm > 0 else None
 
     for contour in contours:
         area_px = cv2.contourArea(contour)
@@ -86,7 +88,7 @@ def detect_hits(
                             id=next_id,
                             x_mm=(cx - origin_px[0]) * mm_per_pixel,
                             y_mm=(cy - origin_px[1]) * mm_per_pixel,
-                            radius_mm=eq_radius_px * mm_per_pixel,
+                            radius_mm=display_radius_mm or (eq_radius_px * mm_per_pixel),
                             confidence=0.7,
                         )
                     )
@@ -108,7 +110,7 @@ def detect_hits(
                 id=next_id,
                 x_mm=(cx_val - origin_px[0]) * mm_per_pixel,
                 y_mm=(cy_val - origin_px[1]) * mm_per_pixel,
-                radius_mm=eq_radius_px * mm_per_pixel,
+                radius_mm=display_radius_mm or (eq_radius_px * mm_per_pixel),
                 confidence=confidence,
             )
         )
@@ -135,7 +137,7 @@ def detect_hits(
                     id=next_id,
                     x_mm=(float(cx) - origin_px[0]) * mm_per_pixel,
                     y_mm=(float(cy) - origin_px[1]) * mm_per_pixel,
-                    radius_mm=eq_radius_px * mm_per_pixel,
+                    radius_mm=display_radius_mm or (eq_radius_px * mm_per_pixel),
                     confidence=0.4,
                     source="auto",
                 )
@@ -203,6 +205,7 @@ def split_roi_components(
     params: DetectionParams,
     origin_px: Tuple[float, float],
     roi: Tuple[int, int, int, int],
+    bullet_diameter_mm: Optional[float] = None,
 ) -> List[ShotPoint]:
     """Attempt to split oversized components within selected ROI using watershed."""
     x, y, w, h = roi
@@ -218,6 +221,7 @@ def split_roi_components(
     min_radius_px = params.min_diameter_mm / 2.0 / mm_per_pixel
     max_radius_px = params.max_diameter_mm / 2.0 / mm_per_pixel
     min_distance_px = params.split_min_distance_mm / mm_per_pixel
+    display_radius_mm = bullet_diameter_mm / 2.0 if bullet_diameter_mm and bullet_diameter_mm > 0 else None
     new_points: List[ShotPoint] = []
     for contour in contours:
         area_px = cv2.contourArea(contour)
@@ -242,7 +246,7 @@ def split_roi_components(
                     id=0,
                     x_mm=(global_x - origin_px[0]) * mm_per_pixel,
                     y_mm=(global_y - origin_px[1]) * mm_per_pixel,
-                    radius_mm=eq_radius_px * mm_per_pixel,
+                    radius_mm=display_radius_mm or (eq_radius_px * mm_per_pixel),
                     confidence=0.6,
                     source="split",
                 )

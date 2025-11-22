@@ -22,9 +22,9 @@ def compute_metrics(points: Iterable[ShotPoint]) -> ShotMetrics:
     std_y = float(ys.std(ddof=1)) if count > 1 else 0.0
     displacement = math.hypot(mean_x, mean_y)
     azimuth = math.degrees(math.atan2(mean_y, mean_x))
-    radii = np.sqrt((xs - mean_x) ** 2 + (ys - mean_y) ** 2)
-    mean_radius = float(radii.mean()) if count > 0 else 0.0
-    r50 = float(np.median(radii)) if count > 0 else 0.0
+    radii_from_origin = np.hypot(xs, ys)
+    mean_radius = float(radii_from_origin.mean()) if count > 0 else 0.0
+    r50 = float(np.median(radii_from_origin)) if count > 0 else 0.0
     extreme_spread = float(_extreme_spread(xs, ys))
     cov = np.cov(xs, ys) if count > 1 else np.zeros((2, 2))
     covariance = (float(cov[0, 0]), float(cov[1, 1]), float(cov[0, 1]))

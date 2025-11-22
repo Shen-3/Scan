@@ -188,6 +188,7 @@ def test_processing_pipeline_end_to_end(tmp_path: Path):
             min_intensity_drop=5.0,
             split_large_components=False,
         ),
+        bullet_diameter_mm=10.0,
         mask_path=None,
         template_path=template_path,
         output_dir=tmp_path / "results",

@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 class PipelineConfig:
     diff_params: DiffThresholdParams
     detection_params: DetectionParams
+    bullet_diameter_mm: float
     mask_path: Optional[Path]
     template_path: Path
     output_dir: Path
@@ -63,6 +64,8 @@ class ProcessingPipeline:
         )
         stats.align_ms = (time.perf_counter() - align_start) * 1000
 
+        origin_px = alignment.origin_px or self.origin_px
+
         diff_start = time.perf_counter()
         binary = diff_and_threshold(
             alignment.aligned,
@@ -80,7 +83,8 @@ class ProcessingPipeline:
             alignment.aligned,
             mm_per_pixel=self.scale_model.mm_per_pixel,
             params=self.config.detection_params,
-            origin_px=self.origin_px,
+            origin_px=origin_px,
+            bullet_diameter_mm=self.config.bullet_diameter_mm,
             debug=self.config.collect_debug,
             template_gray=self.template_gray,
         )
@@ -97,7 +101,7 @@ class ProcessingPipeline:
             points,
             metrics,
             self.scale_model.mm_per_pixel,
-            origin_px=self.origin_px,
+            origin_px=origin_px,
             show_r50=self.config.show_r50,
             show_r90=self.config.show_r90,
             show_debug=False,
@@ -119,7 +123,7 @@ class ProcessingPipeline:
             aligned_gray=alignment.aligned,
             overlay_image=overlay,
             binary_mask=binary,
-            origin_px=self.origin_px,
+            origin_px=origin_px,
             debug_info=debug_info,
         )
         self._store_intermediate(result, frame_bgr, overlay)
@@ -149,6 +153,7 @@ class ProcessingPipeline:
             self.config.detection_params,
             origin,
             roi,
+            bullet_diameter_mm=self.config.bullet_diameter_mm,
         )
         if not new_points:
             return []

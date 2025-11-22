@@ -22,6 +22,7 @@ class AlignmentResult:
     homography: Optional[np.ndarray]
     inliers: int
     total_matches: int
+    origin_px: Tuple[float, float]
 
 
 def _order_points(points: np.ndarray) -> np.ndarray:
@@ -107,9 +108,28 @@ def align_with_border(
     """
     h, w = template_gray.shape[:2]
     aspect = w / float(h)
-    quad = detect_border_quad(frame_gray, aspect_ratio=aspect, min_area_ratio=min_area_ratio, aspect_tolerance=aspect_tolerance)
-    if quad is None:
-        logger.info("Border not found; falling back to feature alignment")
+    frame_quad = detect_border_quad(
+        frame_gray,
+        aspect_ratio=aspect,
+        min_area_ratio=min_area_ratio,
+        aspect_tolerance=aspect_tolerance,
+    )
+    template_quad = detect_border_quad(
+        template_gray,
+        aspect_ratio=aspect,
+        min_area_ratio=min_area_ratio,
+        aspect_tolerance=aspect_tolerance,
+    )
+
+    template_origin = (
+        float(template_gray.shape[1] / 2.0),
+        float(template_gray.shape[0] / 2.0),
+    )
+    if template_quad is not None:
+        template_origin = (float(template_quad[:, 0].mean()), float(template_quad[:, 1].mean()))
+
+    if frame_quad is None:
+        logger.info("Border not found in frame; falling back to feature alignment")
         return align_to_template(
             frame_gray,
             template_gray,
@@ -117,10 +137,22 @@ def align_with_border(
             max_features=max_features,
             good_match_ratio=good_match_ratio,
             ransac_reproj_threshold=ransac_reproj_threshold,
+            origin_px=template_origin,
         )
 
-    dst = np.array([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], dtype=np.float32)
-    H_border = cv2.getPerspectiveTransform(quad.astype(np.float32), dst)
+    if template_quad is None:
+        logger.warning("Border not found in template; falling back to feature alignment")
+        return align_to_template(
+            frame_gray,
+            template_gray,
+            mask=mask,
+            max_features=max_features,
+            good_match_ratio=good_match_ratio,
+            ransac_reproj_threshold=ransac_reproj_threshold,
+            origin_px=template_origin,
+        )
+
+    H_border = cv2.getPerspectiveTransform(frame_quad.astype(np.float32), template_quad.astype(np.float32))
     if np.linalg.cond(H_border) > 1e6:
         logger.warning("Border homography unstable; falling back to feature alignment")
         return align_to_template(
@@ -130,11 +162,18 @@ def align_with_border(
             max_features=max_features,
             good_match_ratio=good_match_ratio,
             ransac_reproj_threshold=ransac_reproj_threshold,
+            origin_px=template_origin,
         )
 
     warped = cv2.warpPerspective(frame_gray, H_border, (w, h))
     if not refine_with_features:
-        return AlignmentResult(aligned=warped, homography=H_border, inliers=0, total_matches=0)
+        return AlignmentResult(
+            aligned=warped,
+            homography=H_border,
+            inliers=0,
+            total_matches=0,
+            origin_px=template_origin,
+        )
 
     refine = align_to_template(
         warped,
@@ -143,9 +182,16 @@ def align_with_border(
         max_features=max_features,
         good_match_ratio=good_match_ratio,
         ransac_reproj_threshold=ransac_reproj_threshold,
+        origin_px=template_origin,
     )
     if refine.homography is None:
-        return AlignmentResult(aligned=warped, homography=H_border, inliers=0, total_matches=0)
+        return AlignmentResult(
+            aligned=warped,
+            homography=H_border,
+            inliers=0,
+            total_matches=0,
+            origin_px=template_origin,
+        )
 
     combined = refine.homography @ H_border
     return AlignmentResult(
@@ -153,6 +199,7 @@ def align_with_border(
         homography=combined,
         inliers=refine.inliers,
         total_matches=refine.total_matches,
+        origin_px=template_origin,
     )
 
 
@@ -163,6 +210,7 @@ def align_to_template(
     max_features: int = 1500,
     good_match_ratio: float = 0.75,
     ransac_reproj_threshold: float = 3.0,
+    origin_px: Optional[Tuple[float, float]] = None,
 ) -> AlignmentResult:
     """Align frame to template via ORB feature matching with RANSAC."""
     orb = cv2.ORB.create(max_features)
@@ -176,7 +224,10 @@ def align_to_template(
     des2 = cast(Optional[np.ndarray], des2_raw)
     if des1 is None or des2 is None or len(kp1) < 4 or len(kp2) < 4:
         logger.warning("Not enough features for alignment")
-        return AlignmentResult(frame_gray.copy(), None, 0, 0)
+        return AlignmentResult(frame_gray.copy(), None, 0, 0, origin_px or (
+            float(template_gray.shape[1] / 2.0),
+            float(template_gray.shape[0] / 2.0),
+        ))
 
     matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
     raw_matches = matcher.knnMatch(des1, des2, k=2)
@@ -191,7 +242,10 @@ def align_to_template(
 
     if len(good_matches) < 4:
         logger.warning("Insufficient good matches: %s", len(good_matches))
-        return AlignmentResult(frame_gray.copy(), None, len(good_matches), len(matches))
+        return AlignmentResult(frame_gray.copy(), None, len(good_matches), len(matches), origin_px or (
+            float(template_gray.shape[1] / 2.0),
+            float(template_gray.shape[0] / 2.0),
+        ))
 
     src_pts = np.array([kp1[m.queryIdx].pt for m in good_matches], dtype=np.float32).reshape(-1, 1, 2)
     dst_pts = np.array([kp2[m.trainIdx].pt for m in good_matches], dtype=np.float32).reshape(-1, 1, 2)
@@ -203,14 +257,29 @@ def align_to_template(
     H = H_mat
     if H is None:
         logger.warning("Homography estimation failed or unstable")
-        return AlignmentResult(frame_gray.copy(), None, inliers, len(good_matches))
+        return AlignmentResult(frame_gray.copy(), None, inliers, len(good_matches), origin_px or (
+            float(template_gray.shape[1] / 2.0),
+            float(template_gray.shape[0] / 2.0),
+        ))
     if np.linalg.cond(H) > 1e6:
         logger.warning("Homography estimation failed or unstable")
-        return AlignmentResult(frame_gray.copy(), None, inliers, len(good_matches))
+        return AlignmentResult(frame_gray.copy(), None, inliers, len(good_matches), origin_px or (
+            float(template_gray.shape[1] / 2.0),
+            float(template_gray.shape[0] / 2.0),
+        ))
 
     height, width = template_gray.shape[:2]
     aligned = cv2.warpPerspective(frame_gray, H, (width, height))
-    return AlignmentResult(aligned=aligned, homography=H, inliers=inliers, total_matches=len(good_matches))
+    return AlignmentResult(
+        aligned=aligned,
+        homography=H,
+        inliers=inliers,
+        total_matches=len(good_matches),
+        origin_px=origin_px or (
+            float(template_gray.shape[1] / 2.0),
+            float(template_gray.shape[0] / 2.0),
+        ),
+    )
 
 
 def apply_homography(points: np.ndarray, homography: np.ndarray) -> np.ndarray:
