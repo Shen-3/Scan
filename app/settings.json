@@ -7,13 +7,13 @@
       1920,
       1080
     ],
-    "min_hole_diameter_mm": 3.0,
-    "max_hole_diameter_mm": 10.0,
+    "min_hole_diameter_mm": 2.0,
+    "max_hole_diameter_mm": 9.0,
     "use_adaptive_threshold": false,
-    "gaussian_sigma": 3.0,
-    "clahe_clip_limit": 3.0,
+    "gaussian_sigma": 4.0,
+    "clahe_clip_limit": 2.0,
     "adaptive_block_size": 3,
-    "adaptive_c": 0.0
+    "adaptive_c": 1.0
   },
   "calibration": {
     "grid_step_mm": 10.0,
