@@ -208,16 +208,27 @@ class ProcessingPipeline:
         return mask
 
     def _align_scaled(self, frame_gray_scaled: np.ndarray, frame_gray_full: np.ndarray) -> "AlignmentResult":
-        if self.downscale_factor == 1.0:
-            return align_with_border(
-                frame_gray_scaled,
-                self.template_gray,
-                mask=self.mask,
-                max_features=1500,
-                good_match_ratio=0.75,
-                ransac_reproj_threshold=3.0,
-            )
+        """
+        Оптимизировано:
+        1) Основной путь — выравнивание на уменьшенном изображении (frame_gray_scaled / template_gray).
+        2) Fallback на full-res выравнивание только если на даунскейле гомографию найти не удалось.
+        """
+        # Сначала пробуем выровнять в скейленном пространстве (дешевле всего)
+        alignment_scaled = align_with_border(
+            frame_gray_scaled,
+            self.template_gray,
+            mask=self.mask,
+            max_features=1500,
+            good_match_ratio=0.75,
+            ransac_reproj_threshold=3.0,
+        )
 
+        # Если фактор == 1.0 или гомография успешно найдена на даунскейле —
+        # этого более чем достаточно, full-res даже не трогаем.
+        if self.downscale_factor == 1.0 or alignment_scaled.homography is not None:
+            return alignment_scaled
+
+        # Fallback: даунскейл не справился, пробуем полное разрешение, как раньше.
         alignment_full = align_with_border(
             frame_gray_full,
             self.template_full,
@@ -233,6 +244,7 @@ class ProcessingPipeline:
         )
 
         if alignment_full.homography is None:
+            # Если даже на full-res гомография не нашлась — просто даунскейлим выровненное full-res
             aligned_resized = self._resize_image(alignment_full.aligned, self.downscale_factor)
             return AlignmentResult(
                 aligned=aligned_resized if aligned_resized is not None else frame_gray_scaled,
@@ -242,7 +254,9 @@ class ProcessingPipeline:
                 origin_px=origin_scaled,
             )
 
+        # Пересчёт full-res гомографии в скейленное пространство координат
         homography_scaled = self._scale_homography(alignment_full.homography, self.downscale_factor)
+
         aligned = cv2.warpPerspective(
             frame_gray_scaled,
             homography_scaled,
@@ -258,14 +272,39 @@ class ProcessingPipeline:
 
     @staticmethod
     def _scale_homography(homography: np.ndarray, factor: float) -> np.ndarray:
+        """
+        Оптимизировано:
+        вместо матричных умножений S^-1 * H * S используем аналитическую формулу
+        для 3x3 гомографии при масштабировании координат.
+
+        Для S = diag(f, f, 1) и S^-1 = diag(1/f, 1/f, 1):
+
+            H' = S^-1 * H * S
+
+        даёт:
+
+            H' = [[h11, h12, h13 / f],
+                  [h21, h22, h23 / f],
+                  [f*h31, f*h32, h33]]
+        """
         if factor == 1.0:
             return homography
-        scale_down = np.array(
-            [[1.0 / factor, 0.0, 0.0], [0.0, 1.0 / factor, 0.0], [0.0, 0.0, 1.0]],
-            dtype=np.float64,
-        )
-        scale_up = np.array(
-            [[factor, 0.0, 0.0], [0.0, factor, 0.0], [0.0, 0.0, 1.0]],
-            dtype=np.float64,
-        )
-        return scale_down @ homography @ scale_up
+
+        f = float(factor)
+        inv_f = 1.0 / f
+
+        # гарантируем float64 и не портим исходную матрицу
+        h = homography.astype(np.float64, copy=False)
+        out = h.copy()
+
+        # применяем аналитическую формулу
+        # первые два столбца остаются такими же
+        # третий столбец: [h13/f, h23/f, h33]
+        out[0, 2] *= inv_f
+        out[1, 2] *= inv_f
+        # третий ряд, первые два элемента: [f*h31, f*h32]
+        out[2, 0] *= f
+        out[2, 1] *= f
+        # out[2, 2] остаётся без изменений
+
+        return out
