@@ -259,6 +259,7 @@ class MainWindow(QMainWindow):
             diff_params=diff_params,
             detection_params=detection_params,
             bullet_diameter_mm=bullet_diameter_mm,
+            downscale_factor=float(processing_settings.get("downscale_factor", 1.0)),
             mask_path=mask_path,
             template_path=template_path,
             output_dir=output_dir,

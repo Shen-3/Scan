@@ -14,6 +14,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "min_hole_diameter_mm": 4.5,
         "max_hole_diameter_mm": 12.0,
         "bullet_diameter_mm": 6.0,
+        "downscale_factor": 1.0,
         "use_adaptive_threshold": False,
         "gaussian_sigma": 1.0,
         "clahe_clip_limit": 2.0,
