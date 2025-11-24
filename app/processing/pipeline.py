@@ -12,7 +12,7 @@ import cv2
 import numpy as np
 
 from app.models import ProcessingResult, ProcessingStats, ShotPoint
-from app.processing.align import align_with_border
+from app.processing.align import AlignmentResult, align_with_border
 from app.processing.detect_hits import DetectionParams, detect_hits, split_roi_components
 from app.processing.diff_threshold import DiffThresholdParams, diff_and_threshold
 from app.processing.metrics import compute_metrics
@@ -27,6 +27,8 @@ logger = logging.getLogger(__name__)
 class PipelineConfig:
     diff_params: DiffThresholdParams
     detection_params: DetectionParams
+    bullet_diameter_mm: float
+    downscale_factor: float
     mask_path: Optional[Path]
     template_path: Path
     output_dir: Path
@@ -39,8 +41,12 @@ class ProcessingPipeline:
     def __init__(self, scale_model: ScaleModel, config: PipelineConfig) -> None:
         self.scale_model = scale_model
         self.config = config
-        self.template_gray = self._load_template(config.template_path)
-        self.mask = self._load_mask(config.mask_path) if config.mask_path else None
+        self.downscale_factor = max(config.downscale_factor, 0.1)
+        self.template_full = self._load_template(config.template_path)
+        self.template_gray = self._resize_image(self.template_full, self.downscale_factor)
+        base_mask = self._load_mask(config.mask_path) if config.mask_path else None
+        self.mask_full = base_mask
+        self.mask = self._resize_image(base_mask, self.downscale_factor) if base_mask is not None else None
         self.origin_px = (
             self.template_gray.shape[1] / 2.0,
             self.template_gray.shape[0] / 2.0,
@@ -50,17 +56,12 @@ class ProcessingPipeline:
         stats = ProcessingStats()
         start = time.perf_counter()
 
-        frame_gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+        frame_gray_full = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+        frame_bgr_scaled = self._resize_image(frame_bgr, self.downscale_factor)
+        frame_gray = cv2.cvtColor(frame_bgr_scaled, cv2.COLOR_BGR2GRAY)
 
         align_start = time.perf_counter()
-        alignment = align_with_border(
-            frame_gray,
-            self.template_gray,
-            mask=self.mask,
-            max_features=1500,
-            good_match_ratio=0.75,
-            ransac_reproj_threshold=3.0,
-        )
+        alignment = self._align_scaled(frame_gray, frame_gray_full)
         stats.align_ms = (time.perf_counter() - align_start) * 1000
 
         origin_px = alignment.origin_px or self.origin_px
@@ -80,7 +81,7 @@ class ProcessingPipeline:
         points, debug_info = detect_hits(
             binary,
             alignment.aligned,
-            mm_per_pixel=self.scale_model.mm_per_pixel,
+            mm_per_pixel=mm_per_pixel,
             params=self.config.detection_params,
             origin_px=origin_px,
             debug=self.config.collect_debug,
@@ -116,7 +117,7 @@ class ProcessingPipeline:
             points=points,
             metrics=metrics,
             stats=stats,
-            mm_per_pixel=self.scale_model.mm_per_pixel,
+            mm_per_pixel=mm_per_pixel,
             homography=alignment.homography.flatten().tolist() if alignment.homography is not None else None,
             aligned_gray=alignment.aligned,
             overlay_image=overlay,
@@ -151,6 +152,7 @@ class ProcessingPipeline:
             self.config.detection_params,
             origin,
             roi,
+            bullet_diameter_mm=self.config.bullet_diameter_mm,
         )
         if not new_points:
             return []
@@ -165,6 +167,18 @@ class ProcessingPipeline:
                 filtered.append(candidate)
         return filtered
 
+    @staticmethod
+    def _resize_image(image: Optional[np.ndarray], downscale_factor: float) -> Optional[np.ndarray]:
+        if image is None:
+            return None
+        if downscale_factor == 1.0:
+            return image
+        h, w = image.shape[:2]
+        new_w = max(1, int(round(w / downscale_factor)))
+        new_h = max(1, int(round(h / downscale_factor)))
+        interpolation = cv2.INTER_AREA if downscale_factor >= 1.0 else cv2.INTER_LINEAR
+        return cv2.resize(image, (new_w, new_h), interpolation=interpolation)
+    
     @staticmethod
     def _load_template(path: Path) -> np.ndarray:
         if not path.exists():
@@ -190,3 +204,105 @@ class ProcessingPipeline:
             return None
         _, mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)
         return mask
+
+    def _align_scaled(self, frame_gray_scaled: np.ndarray, frame_gray_full: np.ndarray) -> "AlignmentResult":
+        """
+        Оптимизировано:
+        1) Основной путь — выравнивание на уменьшенном изображении (frame_gray_scaled / template_gray).
+        2) Fallback на full-res выравнивание только если на даунскейле гомографию найти не удалось.
+        """
+        # Сначала пробуем выровнять в скейленном пространстве (дешевле всего)
+        alignment_scaled = align_with_border(
+            frame_gray_scaled,
+            self.template_gray,
+            mask=self.mask,
+            max_features=1500,
+            good_match_ratio=0.75,
+            ransac_reproj_threshold=3.0,
+        )
+
+        # Если фактор == 1.0 или гомография успешно найдена на даунскейле —
+        # этого более чем достаточно, full-res даже не трогаем.
+        if self.downscale_factor == 1.0 or alignment_scaled.homography is not None:
+            return alignment_scaled
+
+        # Fallback: даунскейл не справился, пробуем полное разрешение, как раньше.
+        alignment_full = align_with_border(
+            frame_gray_full,
+            self.template_full,
+            mask=self.mask_full,
+            max_features=1500,
+            good_match_ratio=0.75,
+            ransac_reproj_threshold=3.0,
+        )
+
+        origin_scaled = (
+            alignment_full.origin_px[0] / self.downscale_factor,
+            alignment_full.origin_px[1] / self.downscale_factor,
+        )
+
+        if alignment_full.homography is None:
+            # Если даже на full-res гомография не нашлась — просто даунскейлим выровненное full-res
+            aligned_resized = self._resize_image(alignment_full.aligned, self.downscale_factor)
+            return AlignmentResult(
+                aligned=aligned_resized if aligned_resized is not None else frame_gray_scaled,
+                homography=None,
+                inliers=alignment_full.inliers,
+                total_matches=alignment_full.total_matches,
+                origin_px=origin_scaled,
+            )
+
+        # Пересчёт full-res гомографии в скейленное пространство координат
+        homography_scaled = self._scale_homography(alignment_full.homography, self.downscale_factor)
+
+        aligned = cv2.warpPerspective(
+            frame_gray_scaled,
+            homography_scaled,
+            (self.template_gray.shape[1], self.template_gray.shape[0]),
+        )
+        return AlignmentResult(
+            aligned=aligned,
+            homography=homography_scaled,
+            inliers=alignment_full.inliers,
+            total_matches=alignment_full.total_matches,
+            origin_px=origin_scaled,
+        )
+
+    @staticmethod
+    def _scale_homography(homography: np.ndarray, factor: float) -> np.ndarray:
+        """
+        Оптимизировано:
+        вместо матричных умножений S^-1 * H * S используем аналитическую формулу
+        для 3x3 гомографии при масштабировании координат.
+
+        Для S = diag(f, f, 1) и S^-1 = diag(1/f, 1/f, 1):
+
+            H' = S^-1 * H * S
+
+        даёт:
+
+            H' = [[h11, h12, h13 / f],
+                  [h21, h22, h23 / f],
+                  [f*h31, f*h32, h33]]
+        """
+        if factor == 1.0:
+            return homography
+
+        f = float(factor)
+        inv_f = 1.0 / f
+
+        # гарантируем float64 и не портим исходную матрицу
+        h = homography.astype(np.float64, copy=False)
+        out = h.copy()
+
+        # применяем аналитическую формулу
+        # первые два столбца остаются такими же
+        # третий столбец: [h13/f, h23/f, h33]
+        out[0, 2] *= inv_f
+        out[1, 2] *= inv_f
+        # третий ряд, первые два элемента: [f*h31, f*h32]
+        out[2, 0] *= f
+        out[2, 1] *= f
+        # out[2, 2] остаётся без изменений
+
+        return out

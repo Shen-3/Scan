@@ -4,8 +4,8 @@
   "active_camera_id": 1,
   "processing": {
     "target_resolution": [
-      1920,
-      1080
+      800,
+      600
     ],
     "min_hole_diameter_mm": 2.0,
     "max_hole_diameter_mm": 9.0,
