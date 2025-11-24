@@ -47,6 +47,7 @@ from app.ui.shot_view import ShotGraphicsView
 from app.ui.settings_dialog import SettingsDialog
 from app.ui.calibration_wizard import CalibrationWizard
 from app.utils.image_io import imread, imwrite
+from app.utils.path_utils import normalize_settings_path, settings_path_str
 
 logger = logging.getLogger(__name__)
 
@@ -211,11 +212,11 @@ class MainWindow(QMainWindow):
 
     def _create_pipeline(self) -> Optional[ProcessingPipeline]:
         calibration = self.settings_manager.get("calibration", {})
-        template_path = Path(calibration.get("template_path", "app/data/template.png"))
+        template_path = normalize_settings_path(calibration.get("template_path"), "app/data/template.png")
         mask_value = calibration.get("mask_path")
         mask_path = None
         if mask_value:
-            candidate = Path(mask_value).expanduser()
+            candidate = normalize_settings_path(mask_value, mask_value)
             if str(candidate) not in {".", ""}:
                 mask_path = candidate
         if not template_path.exists():
@@ -317,7 +318,10 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
-        target_path = Path(self.settings_manager.get("calibration", {}).get("template_path", "app/data/template.png"))
+        target_path = normalize_settings_path(
+            self.settings_manager.get("calibration", {}).get("template_path"),
+            "app/data/template.png",
+        )
         target_path.parent.mkdir(parents=True, exist_ok=True)
         image = imread(path, cv2.IMREAD_GRAYSCALE)
         if image is None:
@@ -536,10 +540,10 @@ class MainWindow(QMainWindow):
             return
         template = cv2.cvtColor(self._current_frame, cv2.COLOR_BGR2GRAY)
         calibration = self.settings_manager.get("calibration", {})
-        template_path = Path(calibration.get("template_path", "app/data/template.png"))
+        template_path = normalize_settings_path(calibration.get("template_path"), "app/data/template.png")
         template_path.parent.mkdir(parents=True, exist_ok=True)
         if imwrite(template_path, template):
-            calibration = {**calibration, "template_path": str(template_path)}
+            calibration = {**calibration, "template_path": settings_path_str(template_path)}
             self.settings_manager.set("calibration", calibration)
             self._pipeline = self._create_pipeline()
             self._set_status("Текущий кадр сохранён как эталон.")

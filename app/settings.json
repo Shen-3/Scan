@@ -21,7 +21,7 @@
     "grid_step_mm": 10.0,
     "mask_path": "",
     "template_path": "app\\data\\template.png",
-    "mm_per_pixel": 0.084
+    "mm_per_pixel": 0.0847
   },
   "export": {
     "output_dir": "results",
@@ -35,7 +35,7 @@
   },
   "ui": {
     "language": "ru",
-    "show_problem_candidates": true,
+    "show_problem_candidates": false,
     "show_r50": true,
     "show_r90": true
   }
