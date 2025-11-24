@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import numpy as np
 import cv2
-from pathlib import Path
 from typing import List, Optional, Tuple
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -21,6 +20,7 @@ from PyQt6.QtWidgets import (
 from app.settings_manager import SettingsManager
 from app.processing.scale import mm_per_pixel_from_grid
 from app.utils.image_io import imread, imwrite, resize_to_max_edge
+from app.utils.path_utils import normalize_settings_path, settings_path_str
 
 MAX_CALIBRATION_DISPLAY_EDGE = 900
 PREVIEW_TEMPLATE_EDGE = 2048
@@ -247,7 +247,7 @@ class CalibrationWizard(QWizard):
         calibration = settings_manager.get("calibration", {})
         self.grid_step_mm: float = float(calibration.get("grid_step_mm", 10.0))
         self.mm_per_pixel: float = float(calibration.get("mm_per_pixel", 0.05))
-        self.template_path = Path(calibration.get("template_path", "app/data/template.png"))
+        self.template_path = normalize_settings_path(calibration.get("template_path"), "app/data/template.png")
         self.template_gray: Optional[np.ndarray] = None
 
         if self.template_path.exists():
@@ -273,7 +273,7 @@ class CalibrationWizard(QWizard):
         calibration = dict(self.settings_manager.get("calibration", {}))
         calibration["grid_step_mm"] = self.grid_step_mm
         calibration["mm_per_pixel"] = self.mm_per_pixel
-        calibration["template_path"] = str(self.template_path)
+        calibration["template_path"] = settings_path_str(self.template_path)
         calibration["mask_path"] = ""
         self.settings_manager.set("calibration", calibration)
 

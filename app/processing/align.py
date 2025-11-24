@@ -16,26 +16,13 @@ else:  # pragma: no cover
     KeyPoint = Any
 
 
+@dataclass
 class AlignmentResult:
-    def __init__(
-        self,
-        aligned: np.ndarray,
-        homography: Optional[np.ndarray],
-        inliers: int,
-        total_matches: int,
-        origin_px: Tuple[float, float],
-    ) -> None:
-        self.aligned = aligned
-        self.homography = homography
-        self.inliers = inliers
-        self.total_matches = total_matches
-        self.origin_px = origin_px
-
-    def __repr__(self) -> str:  # helpful for debugging
-        return (
-            f"AlignmentResult(inliers={self.inliers}, total_matches={self.total_matches},"
-            f" origin_px={self.origin_px})"
-        )
+    aligned: np.ndarray
+    homography: Optional[np.ndarray]
+    inliers: int
+    total_matches: int
+    origin_px: Tuple[float, float]
 
 
 def _order_points(points: np.ndarray) -> np.ndarray:
@@ -293,7 +280,6 @@ def align_to_template(
             float(template_gray.shape[0] / 2.0),
         ),
     )
-
 
 
 def apply_homography(points: np.ndarray, homography: np.ndarray) -> np.ndarray:

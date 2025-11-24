@@ -8,10 +8,12 @@
       600
     ],
     "min_hole_diameter_mm": 2.0,
-    "max_hole_diameter_mm": 9.0,
+    "max_hole_diameter_mm": 30.0,
+    "bullet_diameter_mm": 9.0,
+    "downscale_factor": 2.0,
     "use_adaptive_threshold": false,
-    "gaussian_sigma": 4.0,
-    "clahe_clip_limit": 2.0,
+    "gaussian_sigma": 1.5,
+    "clahe_clip_limit": 1.5,
     "adaptive_block_size": 3,
     "adaptive_c": 1.0
   },
@@ -19,7 +21,7 @@
     "grid_step_mm": 10.0,
     "mask_path": "",
     "template_path": "app\\data\\template.png",
-    "mm_per_pixel": 0.084
+    "mm_per_pixel": 0.0864
   },
   "export": {
     "output_dir": "results",

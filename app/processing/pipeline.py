@@ -65,6 +65,7 @@ class ProcessingPipeline:
         stats.align_ms = (time.perf_counter() - align_start) * 1000
 
         origin_px = alignment.origin_px or self.origin_px
+        mm_per_pixel = self.scale_model.mm_per_pixel * self.downscale_factor
 
         diff_start = time.perf_counter()
         binary = diff_and_threshold(
@@ -84,6 +85,7 @@ class ProcessingPipeline:
             mm_per_pixel=mm_per_pixel,
             params=self.config.detection_params,
             origin_px=origin_px,
+            bullet_diameter_mm=self.config.bullet_diameter_mm,
             debug=self.config.collect_debug,
             template_gray=self.template_gray,
         )
@@ -99,7 +101,7 @@ class ProcessingPipeline:
             cv2.cvtColor(alignment.aligned, cv2.COLOR_GRAY2BGR),
             points,
             metrics,
-            self.scale_model.mm_per_pixel,
+            mm_per_pixel,
             origin_px=origin_px,
             show_r50=self.config.show_r50,
             show_r90=self.config.show_r90,
