@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Tuple
+from typing import List, Optional, Tuple, overload
 
 import cv2
 import numpy as np
@@ -42,8 +42,8 @@ class ProcessingPipeline:
         self.scale_model = scale_model
         self.config = config
         self.downscale_factor = max(config.downscale_factor, 0.1)
-        self.template_full = self._load_template(config.template_path)
-        self.template_gray = self._resize_image(self.template_full, self.downscale_factor)
+        self.template_full: np.ndarray = self._load_template(config.template_path)
+        self.template_gray: np.ndarray = self._resize_image(self.template_full, self.downscale_factor)
         base_mask = self._load_mask(config.mask_path) if config.mask_path else None
         self.mask_full = base_mask
         self.mask = self._resize_image(base_mask, self.downscale_factor) if base_mask is not None else None
@@ -55,6 +55,7 @@ class ProcessingPipeline:
     def process(self, frame_bgr: np.ndarray, target_id: str) -> ProcessingResult:
         stats = ProcessingStats()
         start = time.perf_counter()
+        mm_per_pixel = self.scale_model.mm_per_pixel
 
         frame_gray_full = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
         frame_bgr_scaled = self._resize_image(frame_bgr, self.downscale_factor)
@@ -65,7 +66,6 @@ class ProcessingPipeline:
         stats.align_ms = (time.perf_counter() - align_start) * 1000
 
         origin_px = alignment.origin_px or self.origin_px
-        mm_per_pixel = self.scale_model.mm_per_pixel * self.downscale_factor
 
         diff_start = time.perf_counter()
         binary = diff_and_threshold(
@@ -85,7 +85,6 @@ class ProcessingPipeline:
             mm_per_pixel=mm_per_pixel,
             params=self.config.detection_params,
             origin_px=origin_px,
-            bullet_diameter_mm=self.config.bullet_diameter_mm,
             debug=self.config.collect_debug,
             template_gray=self.template_gray,
         )
@@ -101,7 +100,7 @@ class ProcessingPipeline:
             cv2.cvtColor(alignment.aligned, cv2.COLOR_GRAY2BGR),
             points,
             metrics,
-            mm_per_pixel,
+            self.scale_model.mm_per_pixel,
             origin_px=origin_px,
             show_r50=self.config.show_r50,
             show_r90=self.config.show_r90,
@@ -170,6 +169,16 @@ class ProcessingPipeline:
         return filtered
 
     @staticmethod
+    @overload
+    def _resize_image(image: None, downscale_factor: float) -> None:
+        ...
+
+    @staticmethod
+    @overload
+    def _resize_image(image: np.ndarray, downscale_factor: float) -> np.ndarray:
+        ...
+
+    @staticmethod
     def _resize_image(image: Optional[np.ndarray], downscale_factor: float) -> Optional[np.ndarray]:
         if image is None:
             return None
@@ -207,7 +216,7 @@ class ProcessingPipeline:
         _, mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)
         return mask
 
-    def _align_scaled(self, frame_gray_scaled: np.ndarray, frame_gray_full: np.ndarray) -> "AlignmentResult":
+    def _align_scaled(self, frame_gray_scaled: np.ndarray, frame_gray_full: np.ndarray) -> AlignmentResult:
         """
         Оптимизировано:
         1) Основной путь — выравнивание на уменьшенном изображении (frame_gray_scaled / template_gray).

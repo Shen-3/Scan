@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, cast
 
 import cv2
 import numpy as np
@@ -20,6 +20,11 @@ class DetectionParams:
     split_large_components: bool = True
     split_min_distance_mm: float = 5.0
     min_diameter_relaxation: float = 0.5
+
+
+def _mean_first_channel(image: np.ndarray, mask: np.ndarray) -> float:
+    mean_val = cast(Tuple[float, float, float, float], cv2.mean(image, mask=mask))
+    return float(mean_val[0])
 
 
 def detect_hits(
@@ -55,14 +60,14 @@ def detect_hits(
         eq_radius_px = math.sqrt(area_px / math.pi)
         local_mask = np.zeros(binary_mask.shape, dtype=np.uint8)
         cv2.drawContours(local_mask, [contour], -1, (255, 255, 255), -1)
-        mean_inside = float(cv2.mean(aligned_gray, mask=local_mask)[0])
+        mean_inside = _mean_first_channel(aligned_gray, local_mask)
         dilated = cv2.dilate(local_mask, np.ones((5, 5), np.uint8))
         ring_mask = cv2.subtract(dilated, local_mask)
-        mean_outside = float(cv2.mean(aligned_gray, mask=ring_mask)[0])
+        mean_outside = _mean_first_channel(aligned_gray, ring_mask)
         intensity_drop = mean_outside - mean_inside
         intensity_contrast = abs(intensity_drop)
         if template_gray is not None:
-            template_inside = float(cv2.mean(template_gray, mask=local_mask)[0])
+            template_inside = _mean_first_channel(template_gray, local_mask)
             intensity_contrast = max(intensity_contrast, abs(template_inside - mean_inside))
         center_tuple = (float(center_px[0]), float(center_px[1]))
         if eq_radius_px < relaxed_radius_px or eq_radius_px > max_radius_px or circularity < params.min_circularity:
