@@ -10,10 +10,10 @@
     "min_hole_diameter_mm": 2.0,
     "max_hole_diameter_mm": 30.0,
     "bullet_diameter_mm": 9.0,
-    "downscale_factor": 3.0,
+    "downscale_factor": 2.0,
     "use_adaptive_threshold": false,
-    "gaussian_sigma": 0.5,
-    "clahe_clip_limit": 0.5,
+    "gaussian_sigma": 1.5,
+    "clahe_clip_limit": 1.5,
     "adaptive_block_size": 3,
     "adaptive_c": 1.0
   },
