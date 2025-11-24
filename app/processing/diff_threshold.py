@@ -6,6 +6,8 @@ from typing import Optional
 import cv2
 import numpy as np
 
+from pathlib import Path
+from app.utils.image_io import imwrite
 
 @dataclass
 class DiffThresholdParams:
@@ -29,6 +31,8 @@ def diff_and_threshold(
     template_gray: np.ndarray,
     params: DiffThresholdParams,
     mask: Optional[np.ndarray] = None,
+    debug_dir: Optional[Path] = None,
+    target_id: Optional[str] = None,
 ) -> np.ndarray:
     """Compute binary mask of bullet holes by subtracting template and thresholding."""
     norm_aligned = normalize_image(aligned_gray, params.clahe_clip_limit, params.clahe_tile_grid_size)
@@ -94,4 +98,15 @@ def diff_and_threshold(
         if adapt_nz > current_nz:
             binary = binary_adapt
 
+    if debug_dir is not None and target_id:
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        diff_path = debug_dir / f"{target_id}_diff.png"
+        morph_path = debug_dir / f"{target_id}_morph.png"
+        if not imwrite(diff_path, diff):
+            # Log via OpenCV fallback to avoid introducing logger dependency here.
+            print(f"Failed to save diff image: {diff_path}")
+        if not imwrite(morph_path, binary):
+            print(f"Failed to save morph image: {morph_path}")
+
+    
     return binary

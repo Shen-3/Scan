@@ -188,6 +188,8 @@ def test_processing_pipeline_end_to_end(tmp_path: Path):
             min_intensity_drop=5.0,
             split_large_components=False,
         ),
+        bullet_diameter_mm=10.0,
+        downscale_factor=1.0,
         mask_path=None,
         template_path=template_path,
         output_dir=tmp_path / "results",
@@ -206,4 +208,36 @@ def test_processing_pipeline_end_to_end(tmp_path: Path):
     assert result.overlay_path is not None
     assert Path(result.overlay_path).exists()
     assert result.stats.align_ms >= 0.0
-    assert result.mm_per_pixel == pytest.approx(scale_model.mm_per_pixel) 
+    assert result.mm_per_pixel == pytest.approx(scale_model.mm_per_pixel)
+
+
+def test_processing_pipeline_applies_downscale(tmp_path: Path):
+    template = np.full((120, 120), 220, dtype=np.uint8)
+    template_path = tmp_path / "template.png"
+    cv2.imwrite(str(template_path), template)
+    scale_model = ScaleModel(mm_per_pixel=0.25, reference_name="test-profile")
+    config = PipelineConfig(
+        diff_params=DiffThresholdParams(use_adaptive=False, gaussian_sigma=0.0, morph_kernel_size=3, morph_iterations=1),
+        detection_params=DetectionParams(
+            min_diameter_mm=4.0,
+            max_diameter_mm=12.0,
+            min_circularity=0.5,
+            min_intensity_drop=5.0,
+            split_large_components=False,
+        ),
+        bullet_diameter_mm=8.0,
+        downscale_factor=2.0,
+        mask_path=None,
+        template_path=template_path,
+        output_dir=tmp_path / "results",
+        show_r50=False,
+        show_r90=False,
+        collect_debug=False,
+    )
+    pipeline = ProcessingPipeline(scale_model, config)
+    frame = cv2.cvtColor(template, cv2.COLOR_GRAY2BGR)
+    cv2.circle(frame, (60, 65), 8, (10, 10, 10), -1)
+    result = pipeline.process(frame, target_id="scaled")
+    assert result.mm_per_pixel == pytest.approx(scale_model.mm_per_pixel * 2.0)
+    assert result.aligned_gray.shape[0] == 60
+    assert result.aligned_gray.shape[1] == 60
