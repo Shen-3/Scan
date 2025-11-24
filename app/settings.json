@@ -9,7 +9,9 @@
     ],
     "min_hole_diameter_mm": 2.0,
     "max_hole_diameter_mm": 9.0,
-    "use_adaptive_threshold": false,
+    "bullet_diameter_mm": 6.0,
+    "downscale_factor": 1.0,
+    "use_adaptive_threshold": true,
     "gaussian_sigma": 4.0,
     "clahe_clip_limit": 2.0,
     "adaptive_block_size": 3,
@@ -33,7 +35,7 @@
   },
   "ui": {
     "language": "ru",
-    "show_problem_candidates": false,
+    "show_problem_candidates": true,
     "show_r50": true,
     "show_r90": true
   }

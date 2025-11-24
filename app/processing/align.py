@@ -56,8 +56,8 @@ def _quad_aspect_ratio(quad: np.ndarray) -> float:
     width_bottom = np.linalg.norm(br - bl)
     height_left = np.linalg.norm(bl - tl)
     height_right = np.linalg.norm(br - tr)
-    width = (width_top + width_bottom) / 2.0
-    height = (height_left + height_right) / 2.0
+    width = float((width_top + width_bottom) / 2.0)
+    height = float((height_left + height_right) / 2.0)
     if height == 0:
         return 0.0
     return width / height
@@ -76,7 +76,8 @@ def detect_border_quad(
     """
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(blur, 40, 120)
-    edges = cv2.dilate(edges, None, iterations=2)
+    dilation_kernel = np.ones((3, 3), np.uint8)
+    edges = cv2.dilate(edges, dilation_kernel, iterations=2)
     edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
 
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)

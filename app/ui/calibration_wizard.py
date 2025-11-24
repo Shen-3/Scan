@@ -154,7 +154,8 @@ class TemplatePreviewPage(QWizardPage):
         if wizard.template_path.exists():
             template = imread(wizard.template_path, cv2.IMREAD_GRAYSCALE)
             if template is not None:
-                original_shape = template.shape[:2]
+                h, w = template.shape[:2]
+                original_shape = (int(h), int(w))
         wizard.template_gray = template
         if template is not None:
             preview = resize_to_max_edge(template, PREVIEW_TEMPLATE_EDGE)

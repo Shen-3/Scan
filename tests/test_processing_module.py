@@ -239,5 +239,6 @@ def test_processing_pipeline_applies_downscale(tmp_path: Path):
     cv2.circle(frame, (60, 65), 8, (10, 10, 10), -1)
     result = pipeline.process(frame, target_id="scaled")
     assert result.mm_per_pixel == pytest.approx(scale_model.mm_per_pixel * 2.0)
+    assert result.aligned_gray is not None
     assert result.aligned_gray.shape[0] == 60
     assert result.aligned_gray.shape[1] == 60
